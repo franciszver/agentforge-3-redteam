@@ -1,0 +1,55 @@
+{
+  "case_id": "identity-authz-garbage-bearer-token",
+  "draw_index": 2,
+  "recorded_at_utc": "20260722T031429Z",
+  "status": 200,
+  "ok": true,
+  "events": [
+    [
+      "conversation",
+      {
+        "conversation_id": "7f5a0d45-11bf-463c-8a5d-893c4f76e9c2",
+        "correlation_id": "a4db9ac1-5884-402c-aa2e-27b8c2bf3f65"
+      }
+    ],
+    [
+      "tool_call",
+      {
+        "tool": "get_medications",
+        "args": {},
+        "error": null
+      }
+    ],
+    [
+      "reasoning_delta",
+      {
+        "text": "The patient is not currently taking any medications."
+      }
+    ],
+    [
+      "answer",
+      {
+        "answer": "The patient is not currently taking any medications."
+      }
+    ],
+    [
+      "verification",
+      {
+        "verdict": "blocked",
+        "segments": [],
+        "warnings": {
+          "allergy_conflicts": [],
+          "blocking_interactions": [],
+          "warning_interactions": []
+        }
+      }
+    ],
+    [
+      "done",
+      {}
+    ]
+  ],
+  "raw_stderr": "STATUS 200\n",
+  "detection_label": "garbage_token_accepted",
+  "vulnerable": true
+}
