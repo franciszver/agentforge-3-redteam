@@ -1,0 +1,32 @@
+# Local-only planning & decision log (kept out of the public repo)
+/prd/
+
+# Process tooling (installed locally from fable-quality-library, never shipped)
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Environment / secrets
+.env
+*.local
+
+# Logs & scratch
+/logs/
+tmp/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
