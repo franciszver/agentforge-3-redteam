@@ -1,9 +1,13 @@
 # AgentForge Phase 3 — Adversarial Security & Red-Team Platform
 
-> **Status: planning scaffold (not yet built).** A fresh, independent repo — not
-> a duplicate or fork. Its attack target is the Phase 2 co-pilot
-> ([agentforge-2-evidence-agent](https://github.com/franciszver/agentforge-2-evidence-agent)),
-> stood up locally and exposed live over Tailscale.
+> **Status: Bootstrap (P3.0) and Stage 1 target drive (P3.1) are done.** A
+> fresh, independent repo — not a duplicate or fork. Its attack target is the
+> Phase 2 co-pilot
+> ([agentforge-2-evidence-agent](https://github.com/franciszver/agentforge-2-evidence-agent),
+> pinned `v2.0.0`), currently driven **locally as a black box**; live
+> Tailscale exposure is deferred (see issue #3). The live plan is
+> **[GitHub Project #4, "AgentForge Red-Team Platform"](https://github.com/users/franciszver/projects/4)** —
+> planning docs below are frozen at import.
 
 ## What Phase 3 builds
 
@@ -18,9 +22,9 @@ trust domains** ("conflict of interest by design"):
 - **Documentation Agent** — Judge-confirmed exploits → structured vuln reports.
 - **Regression harness** + observability that feeds the Orchestrator's decisions.
 
-Threat model maps to OWASP Top 10 + OWASP LLM Top 10. Red Team role runs a
-**local uncensored model** (so it won't refuse offensive tasks) — consistent
-with the fully-local, no-PHI-egress posture of the whole AgentForge series.
+Threat model maps to OWASP Top 10 + OWASP LLM Top 10. The Red Team Agent's
+model strategy (local uncensored vs. cloud vs. hybrid) is decided at
+Architecture Defense (P3.5) — see the decision record.
 
 See `planning/` for the brief, the delivery playbook, and the full plan. The
 authoritative, paste-ready kickoff is **`planning/PHASE3_KICKOFF_PROMPT.md`** —
