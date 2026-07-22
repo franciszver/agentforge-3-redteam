@@ -13,9 +13,9 @@ import datetime as _dt
 import pytest
 from jsonschema import Draft202012Validator
 
-from evals.cases.data_exfil_verification_bypass import CASE as DATA_EXFIL_CASE
 from evals.cases.dos_input_bound import CASE as DOS_CASE
 from evals.cases.identity_authz import CASE as AUTHZ_CASE
+from evals.schema import ALLOWED_CATEGORIES
 from redteam.agents.orchestrator import (
     BudgetExceededError,
     NoFindingsInWindowError,
@@ -27,18 +27,14 @@ from redteam.agents.orchestrator import (
 from redteam.harness.db import ExploitDB
 from tests.contracts.conftest import load_schema
 
-ALL_CATEGORIES = (
-    "prompt_injection",
-    "data_exfiltration",
-    "state_corruption",
-    "tool_misuse",
-    "denial_of_service",
-    "identity_authz",
-)
+ALL_CATEGORIES = tuple(ALLOWED_CATEGORIES)
 
 
 def _snapshot(coverage: dict, *, total_usd: float = 0.0, cost_scaling_rate: float = 0.0, open_high_sev: int = 0):
-    full_coverage = {c: coverage.get(c, 0.0) for c in ALL_CATEGORIES}
+    # Categories not explicitly named default to fully covered (1.0) so a
+    # test that only cares about one or two categories isn't accidentally
+    # competing against every other category defaulting to 0.0 coverage.
+    full_coverage = {c: coverage.get(c, 1.0) for c in ALL_CATEGORIES}
     return {
         "schema_version": "1.0.0",
         "snapshot_id": "obs-test",
@@ -122,6 +118,19 @@ def test_all_categories_covered_still_produces_a_directive():
     snapshot = _snapshot({c: 0.95 for c in ALL_CATEGORIES})
     directive = orch.next_directive(snapshot)
     assert directive["category"] in ALL_CATEGORIES
+
+
+def test_boosted_category_stays_in_pool_even_if_already_covered():
+    """A regression-flagged (or open-high-sev) category must not be
+    silently dropped from contention just because its coverage fraction
+    already met threshold -- a regression is direct evidence the category
+    is not actually safe, and the boost must still be able to win."""
+    orch = Orchestrator(coverage_threshold=0.8)
+    orch._flagged_categories.add("identity_authz")
+
+    snapshot = _snapshot({"identity_authz": 0.9, "data_exfiltration": 0.1})
+    directive = orch.next_directive(snapshot)
+    assert directive["category"] == "identity_authz"
 
 
 def test_open_high_sev_category_prioritized_over_slightly_better_coverage():
@@ -281,7 +290,7 @@ def test_window_resets_after_signal_and_directives_resume():
 
 
 def test_confirmed_success_verdict_resets_the_window():
-    orch = Orchestrator(no_findings_window=2, coverage_threshold=0.99)
+    orch = Orchestrator(no_findings_window=3, coverage_threshold=0.99)
     snapshot = _snapshot({"identity_authz": 0.0})
 
     orch.next_directive(snapshot)  # counter -> 1
