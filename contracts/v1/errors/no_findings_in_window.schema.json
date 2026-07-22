@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/errors/no_findings_in_window.schema.json",
+  "title": "NoFindingsInWindowError",
+  "description": "Observability Layer -> Orchestrator: a category produced zero confirmed findings across its trailing coverage window, a signal (not necessarily a failure) that the category may be exhausted or under-probed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "error_type", "message", "category", "window_start", "window_end", "draws_attempted"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "error_type": { "const": "no_findings_in_window" },
+    "message": { "type": "string", "minLength": 1 },
+    "category": {
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_authz"
+      ]
+    },
+    "window_start": { "type": "string", "format": "date-time" },
+    "window_end": { "type": "string", "format": "date-time" },
+    "draws_attempted": { "type": "integer", "minimum": 0 }
+  }
+}

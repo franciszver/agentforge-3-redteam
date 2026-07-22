@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/attack_attempt.schema.json",
+  "title": "AttackAttempt",
+  "description": "Red Team Agent -> target / Judge Agent (docs/ARCHITECTURE.md §2): one probe. Field names align with evals.schema.AttackCase (category, patient_id, message) so the P3.4 harness maps onto this contract without a parallel definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "case_id",
+    "category",
+    "owasp_web",
+    "owasp_llm",
+    "surface_ref",
+    "patient_id",
+    "message",
+    "draw_number",
+    "issued_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "attempt_id": { "type": "string", "pattern": "^att-[0-9a-fA-F-]+$" },
+    "case_id": { "type": "string", "minLength": 1 },
+    "category": {
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_authz"
+      ]
+    },
+    "owasp_web": { "type": "string", "minLength": 1 },
+    "owasp_llm": { "type": "string", "minLength": 1 },
+    "surface_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Citation into docs/THREAT_MODEL.md, mirrors AttackCase.surface_ref."
+    },
+    "patient_id": { "type": "integer" },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The /chat probe input, mirrors AttackCase.message."
+    },
+    "upload": {
+      "type": "object",
+      "description": "Present only for document-upload probes.",
+      "additionalProperties": false,
+      "required": ["filename", "content_ref"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1 },
+        "content_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "multi_turn": {
+      "type": "object",
+      "description": "Present only when this attempt is one turn of a multi-turn attack sequence.",
+      "additionalProperties": false,
+      "required": ["sequence_id", "turn_number"],
+      "properties": {
+        "sequence_id": { "type": "string", "minLength": 1 },
+        "turn_number": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "draw_number": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "bearer_token": { "type": "string" },
+    "issued_at": { "type": "string", "format": "date-time" }
+  }
+}

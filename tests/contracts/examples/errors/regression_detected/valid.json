@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0.0",
+  "error_type": "regression_detected",
+  "message": "previously fixed exploit reappeared on regression sweep",
+  "exploit_id": "EXP-0001",
+  "category": "identity_authz",
+  "previous_status": "fixed",
+  "detected_at": "2026-07-21T10:11:00Z"
+}

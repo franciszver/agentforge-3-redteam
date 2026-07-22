@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/errors/target_unreachable.schema.json",
+  "title": "TargetUnreachableError",
+  "description": "Red Team Agent -> Orchestrator: the target (Phase 2 co-pilot) could not be reached to deliver a probe.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "error_type", "message", "target_url", "attempted_at", "retry_count"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "error_type": { "const": "target_unreachable" },
+    "message": { "type": "string", "minLength": 1 },
+    "target_url": { "type": "string", "minLength": 1 },
+    "attempted_at": { "type": "string", "format": "date-time" },
+    "retry_count": { "type": "integer", "minimum": 0 }
+  }
+}

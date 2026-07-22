@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "error_type": "target_unreachable",
+  "message": "connection refused after 3 retries",
+  "target_url": "http://development-easy-agent-1:8000/chat",
+  "attempted_at": "2026-07-21T10:10:00Z",
+  "retry_count": 3
+}

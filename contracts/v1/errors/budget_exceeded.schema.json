@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/errors/budget_exceeded.schema.json",
+  "title": "BudgetExceededError",
+  "description": "Red Team Agent / Regression Harness -> Orchestrator: a requested draw count exceeded the issuing directive's budget.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "error_type", "message", "directive_id", "category", "requested_draws", "budget_max_draws"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "error_type": { "const": "budget_exceeded" },
+    "message": { "type": "string", "minLength": 1 },
+    "directive_id": { "type": "string", "minLength": 1 },
+    "category": {
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_authz"
+      ]
+    },
+    "requested_draws": { "type": "integer", "minimum": 1 },
+    "budget_max_draws": { "type": "integer", "minimum": 1, "maximum": 3 }
+  }
+}

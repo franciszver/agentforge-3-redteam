@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "VULN-0002",
+  "exploit_id": "EXP-0001",
+  "severity": "critical",
+  "clinical_impact": "x",
+  "observed": "y",
+  "expected": "z",
+  "remediation": "w",
+  "fix_validation_status": "maybe",
+  "requires_human_gate": false,
+  "filed_at": "2026-07-21T10:08:00Z"
+}

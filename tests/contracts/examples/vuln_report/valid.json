@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "VULN-0001",
+  "exploit_id": "EXP-0001",
+  "severity": "critical",
+  "clinical_impact": "Unauthorized PHI disclosure for arbitrary patient_id via garbage bearer token.",
+  "observed": "200 OK with full patient record",
+  "expected": "401/403 rejection",
+  "remediation": "Enforce bearer-token validation before patient-binding lookup.",
+  "fix_validation_status": "not_validated",
+  "requires_human_gate": true,
+  "filed_at": "2026-07-21T10:08:00Z"
+}
