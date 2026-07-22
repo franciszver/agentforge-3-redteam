@@ -26,11 +26,10 @@ Threat model maps to OWASP Top 10 + OWASP LLM Top 10. The Red Team Agent's
 model strategy (local uncensored vs. cloud vs. hybrid) is decided at
 Architecture Defense (P3.5) — see the decision record.
 
-See `planning/` for the brief, the delivery playbook, and the full plan. The
-authoritative, paste-ready kickoff is **`planning/PHASE3_KICKOFF_PROMPT.md`** —
-grounded in Phase 2's real, measured attack surface (issue #29), superseding the
-older generic `planning/KICKOFF_PROMPT.md`. The attack target is frozen at tag
-**`v2.0.0`**.
+See `planning/` for the brief and the authoritative, paste-ready kickoff
+(**`planning/PHASE3_KICKOFF_PROMPT.md`**) — grounded in Phase 2's real, measured
+attack surface (issue #29), superseding the older generic
+`planning/KICKOFF_PROMPT.md`. The attack target is frozen at tag **`v2.0.0`**.
 
 ## AgentForge series
 

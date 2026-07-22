@@ -15,7 +15,7 @@ A multi-agent red-team platform whose attack target is the Phase 2 co-pilot
 
 ## Standing up the target (this desktop is provisioned; stack is currently UP)
 
-Target repo cloned at `agentforge-2-evidence-agent`, pinned `v2.0.0`.
+Target repo cloned locally as a sibling checkout of `agentforge-2-evidence-agent`, pinned `v2.0.0`.
 
 - Dev stack: `cd docker/development-easy && docker compose -f docker-compose.yml -f docker-compose.copilot.yml up -d --wait`
 - Live-expose (deployed-URL hard gate, run yourself): `scripts/tailscale-serve-copilot.sh`
