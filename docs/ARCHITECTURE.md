@@ -69,7 +69,7 @@ every arrow in the diagram below and are specified in full in P3.12
 ```mermaid
 flowchart LR
     subgraph ZoneA["Zone A — Adversarial (isolated process/context)"]
-        RT["Red Team Agent<br/>(gemma-E4B-abliterated, local)"]
+        RT["Red Team Agent<br/>(abliterated Qwen, qwen2.5-abliterate:7b, local)"]
     end
 
     subgraph Target["Attack Target"]
@@ -167,8 +167,9 @@ role calls a hosted API; nothing target-adjacent leaves the local network
 boundary — consistent with the target itself being a zero-PHI-egress,
 no-internet clinical appliance.
 
-- **Red Team Agent generator:** **gemma-E4B-abliterated**, served locally.
-  This is the one role that structurally *needs* an uncensored model —
+- **Red Team Agent generator:** **abliterated Qwen**
+  (`huihui_ai/qwen2.5-abliterate:7b`), served locally. This is the one role
+  that structurally *needs* an uncensored model —
   stock instruct models refuse offensive-security generation outright, which
   would silently cap the attack suite's coverage at whatever a safety-tuned
   model is willing to write. The abliterated model must run **CPU/RAM-resident,
@@ -187,12 +188,16 @@ no-internet clinical appliance.
   appropriate and lower-risk than the Red Team's abliterated model.
 - **Feasibility is validated, not assumed, at the start of P3.6 (Build).**
   This document commits to the *role* (local, uncensored, isolated) and
-  treats the *specific model* (gemma-E4B-abliterated) as configuration to be
+  treats the *specific model* (abliterated Qwen) as configuration to be
   measured against refusal rate and attack quality before the Red Team Agent
   is built out. If that model underperforms, the safety and independence
   invariants in §3 and §2 hold regardless of which model fills the Red Team
   role — swapping the model is a configuration change, not an architecture
-  change.
+  change: it is set by `DEFAULT_MODEL` in `redteam/agents/red_team.py`, a
+  single overridable constant. An abliterated Gemma-3 GGUF was evaluated
+  first and ruled out at load time — its `token_embd` tensor shape was
+  incompatible with the installed ollama version — which is what led to
+  qwen2.5-abliterate as the shipped default.
 
 ## 5. Build-vs-configure decision record
 
