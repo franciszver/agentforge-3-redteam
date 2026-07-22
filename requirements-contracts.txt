@@ -1,4 +1,7 @@
-# Dependency for contracts/ contract tests only (tests/contracts/).
-# The rest of this repo stays stdlib + pytest; jsonschema is the one
-# pinned exception, justified in contracts/README.md.
+# Dependency for contracts/ contract tests (tests/contracts/) AND for
+# redteam/harness/db.py's pre-write ExploitDB validation (P3.10, issue
+# #11), which validates against the same contracts/v1/exploit_record
+# schema.json at runtime, not just in tests. The rest of this repo stays
+# stdlib + pytest; jsonschema is the one pinned exception, justified in
+# contracts/README.md.
 jsonschema==4.26.0

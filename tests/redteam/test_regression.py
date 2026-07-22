@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import datetime as _dt
 
-import pytest
 from jsonschema import Draft202012Validator
 
 from evals.cases.data_exfil_verification_bypass import CASE as DATA_EXFIL_CASE
