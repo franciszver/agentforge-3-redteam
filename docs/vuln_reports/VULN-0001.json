@@ -9,5 +9,7 @@
   "remediation": "Enforce bearer-token validation against a real, verifiable credential before any patient-binding lookup runs -- accepting any non-empty token is not authentication.",
   "fix_validation_status": "not_validated",
   "requires_human_gate": true,
-  "filed_at": "2026-07-22T05:53:19Z"
+  "filed_at": "2026-07-22T05:53:19Z",
+  "approved_at": "2026-07-22T06:01:56Z",
+  "approved_by": "owner"
 }
