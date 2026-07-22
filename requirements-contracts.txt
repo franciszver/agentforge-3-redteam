@@ -1,0 +1,4 @@
+# Dependency for contracts/ contract tests only (tests/contracts/).
+# The rest of this repo stays stdlib + pytest; jsonschema is the one
+# pinned exception, justified in contracts/README.md.
+jsonschema==4.26.0

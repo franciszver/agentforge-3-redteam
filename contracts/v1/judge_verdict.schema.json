@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/judge_verdict.schema.json",
+  "title": "JudgeVerdict",
+  "description": "Judge Agent -> Orchestrator (docs/ARCHITECTURE.md §2): scored outcome plus drift-check signal (§6's gold-set agreement-rate method).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "verdict_id", "attempt_id", "case_id", "outcome", "evidence", "scored_at"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "verdict_id": { "type": "string", "pattern": "^ver-[0-9a-fA-F-]+$" },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "outcome": {
+      "enum": ["success", "fail", "partial", "regression"],
+      "description": "success/fail/partial/regression per docs/ARCHITECTURE.md §3(2)."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Whatever the Judge extracted from the target's response supporting this outcome; free-form but always present (may be empty for a clean fail)."
+    },
+    "drift_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["drift_suspected"],
+      "properties": {
+        "drift_suspected": { "type": "boolean" },
+        "agreement_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Judge's agreement rate with the gold-labeled set on the most recent regression sweep (ARCHITECTURE.md §6, 95% threshold)."
+        },
+        "flipped_cases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Gold case ids whose score flipped since the previous sweep."
+        }
+      }
+    },
+    "scored_at": { "type": "string", "format": "date-time" }
+  }
+}

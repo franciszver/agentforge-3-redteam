@@ -14,7 +14,6 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS_V1 = REPO_ROOT / "contracts" / "v1"
