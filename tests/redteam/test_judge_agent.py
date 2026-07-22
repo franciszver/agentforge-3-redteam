@@ -111,11 +111,11 @@ def test_regression_outcome_when_previously_confirmed():
 def test_deterministic_default_path_is_reproducible_no_model_call():
     judge = JudgeAgent()
     v1 = judge.score(
-        AUTHZ_CASE, VULNERABLE_AUTHZ_RESPONSE, attempt_id="att-x", verdict_id="ver-fixed",
+        AUTHZ_CASE, VULNERABLE_AUTHZ_RESPONSE, attempt_id="att-x", verdict_id="ver-abc123",
         scored_at="2026-07-21T10:00:00Z",
     )
     v2 = judge.score(
-        AUTHZ_CASE, VULNERABLE_AUTHZ_RESPONSE, attempt_id="att-x", verdict_id="ver-fixed",
+        AUTHZ_CASE, VULNERABLE_AUTHZ_RESPONSE, attempt_id="att-x", verdict_id="ver-abc123",
         scored_at="2026-07-21T10:00:00Z",
     )
     assert v1 == v2
