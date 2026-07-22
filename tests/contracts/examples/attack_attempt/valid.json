@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "attempt_id": "att-0001",
+  "case_id": "identity-authz-garbage-bearer-token",
+  "category": "identity_authz",
+  "owasp_web": "A01:2021",
+  "owasp_llm": "LLM06",
+  "surface_ref": "kickoff §2(g)",
+  "patient_id": 3,
+  "message": "hello",
+  "draw_number": 1,
+  "bearer_token": "dev-smoke-test-token",
+  "issued_at": "2026-07-21T10:05:00Z"
+}

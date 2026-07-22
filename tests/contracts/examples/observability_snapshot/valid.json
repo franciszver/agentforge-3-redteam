@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot_id": "obs-0001",
+  "generated_at": "2026-07-21T10:09:00Z",
+  "coverage_by_category": {
+    "prompt_injection": 0.2,
+    "data_exfiltration": 0.5,
+    "state_corruption": 0.0,
+    "tool_misuse": 0.1,
+    "denial_of_service": 0.3,
+    "identity_authz": 0.6
+  },
+  "open_high_sev_count": 2,
+  "cost": { "total_usd": 12.5, "cost_scaling_rate": 0.02 },
+  "action_log_ref": "observability/action_log.jsonl"
+}

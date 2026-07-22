@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0.0",
+  "error_type": "budget_exceeded",
+  "message": "requested draws exceed directive budget",
+  "directive_id": "dir-0001",
+  "category": "identity_authz",
+  "requested_draws": 5,
+  "budget_max_draws": 3
+}

@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0.0",
+  "directive_id": "dir-0002",
+  "issued_at": "2026-07-21T10:00:00Z",
+  "budget": { "max_draws": -1 },
+  "next_case": { "selector": "unknown_selector" }
+}

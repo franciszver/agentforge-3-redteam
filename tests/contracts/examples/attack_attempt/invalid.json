@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "attempt_id": "att-0002",
+  "case_id": "bad-case",
+  "category": "sql_injection",
+  "owasp_web": "A01:2021",
+  "owasp_llm": "LLM06",
+  "surface_ref": "kickoff §2(g)",
+  "patient_id": 3,
+  "draw_number": 1
+}
