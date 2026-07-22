@@ -30,7 +30,8 @@
     "fix_validation_status": { "enum": ["not_validated", "validated", "regressed"] },
     "requires_human_gate": { "type": "boolean" },
     "filed_at": { "type": "string", "format": "date-time" },
-    "approved_at": { "type": "string", "format": "date-time" }
+    "approved_at": { "type": "string", "format": "date-time" },
+    "approved_by": { "type": "string", "minLength": 1 }
   },
   "if": { "properties": { "severity": { "const": "critical" } } },
   "then": { "properties": { "requires_human_gate": { "const": true } } }

@@ -101,8 +101,18 @@ def test_approving_a_pending_critical_report_files_it():
 
     assert filed["status"] == "filed"
     assert filed["approved_at"] == "2026-07-21T11:00:00Z"
+    assert filed["approved_by"] == "owner"  # default approving identity
     assert agent.get_pending("EXP-0001") is None
     assert agent.get_filed("EXP-0001") is not None
+
+
+def test_approve_accepts_explicit_approved_by():
+    agent = DocumentationAgent()
+    agent.file_report(CRITICAL_EXPLOIT)
+
+    filed = agent.approve("EXP-0001", approved_by="someone-else")
+
+    assert filed["approved_by"] == "someone-else"
 
 
 def test_approving_unknown_exploit_id_raises():
