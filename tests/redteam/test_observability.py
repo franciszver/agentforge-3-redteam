@@ -211,6 +211,21 @@ def test_action_log_rejects_empty_event_type():
         log.append(agent="orchestrator", event_type="")
 
 
+def test_action_log_schema_version_mismatch_raises_on_open(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "action_log.sqlite3"
+    ActionLog(db_path).close()
+
+    raw = sqlite3.connect(str(db_path))
+    raw.execute("UPDATE schema_meta SET version = 999")
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(ActionLogError):
+        ActionLog(db_path)
+
+
 def test_action_log_export_jsonl_is_reloadable(tmp_path):
     log = ActionLog(":memory:")
     log.append(agent="observability", event_type="snapshot_emitted", details={"n": 1})
@@ -237,6 +252,23 @@ def test_suite_run_log_tracks_pass_fail_by_version():
 
 
 # -- emit_snapshot(): the contract-shaped Orchestrator edge --------------------
+
+
+def test_suite_run_log_schema_version_mismatch_raises_on_open(tmp_path):
+    import sqlite3
+
+    from redteam.observability import SuiteRunLogError
+
+    db_path = tmp_path / "runs.sqlite3"
+    SuiteRunLog(db_path).close()
+
+    raw = sqlite3.connect(str(db_path))
+    raw.execute("UPDATE schema_meta SET version = 999")
+    raw.commit()
+    raw.close()
+
+    with pytest.raises(SuiteRunLogError):
+        SuiteRunLog(db_path)
 
 
 def test_emit_snapshot_validates_against_contract(tmp_path):
