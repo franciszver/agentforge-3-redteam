@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "VULN-0002",
+  "exploit_id": "EXP-0002",
+  "severity": "critical",
+  "clinical_impact": "A clinician can be shown medication/allergy/lab information that is stale or contradicts the source record, while the platform marks it verified.",
+  "observed": "detect() returned vulnerable=True, label='discontinued_med_reported_as_current_verified'",
+  "expected": "detect() returns vulnerable=False (guard holds)",
+  "remediation": "Extend verification to check a cited record's own status/relevance, not just its provenance: a citation to a discontinued/inactive record must not back a 'currently taking/on' claim as verified.",
+  "fix_validation_status": "not_validated",
+  "requires_human_gate": true,
+  "filed_at": "2026-07-22T05:53:19Z"
+}
