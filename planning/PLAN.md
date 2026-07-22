@@ -26,6 +26,36 @@ Two facts about the target materially shape this phase:
 - **The target is single-GPU and serializes** (~0.15 req/s, p50 59s at 10 concurrent; 50-concurrent never ran because the ceiling makes it uninformative). So the brief's **"load test of 100 consecutive live attack cases" will be throughput-bound on the target's GPU serialization** — 100 live cases ≈ 100+ minutes wall-clock. Plan for that: the bottleneck analysis is largely pre-determined (GPU-serialized inference on the target, not the platform), which is fine to state — but budget the run time, and consider recording target responses for replay so the *platform's* own throughput can be measured independently of the target's ceiling.
 - **No API collection / measured cost accounting was inherited** — Phase 3 stands alone anyway, but don't assume the target exposes a documented API surface; you'll characterize its endpoints yourself during Stage 1 recon.
 
+### Measured as-built weaknesses to hand the red team (Phase 2 complete, 2026-07-21)
+Phase 2 is **done, public, and frozen at tag `v2.0.0`**. The authoritative,
+grounded attack-surface map is `planning/PHASE3_KICKOFF_PROMPT.md` (every claim
+cites a committed finding). The highest-value targets it documents — each a
+*measured* weakness, not a guess:
+
+- **Unjudged `SourceRef` relevance (issue #130) — the biggest known soft spot.**
+  73% (62/85) of the target's golden claims rest on ordinary `SourceRef`s that
+  get **no content-relevance check** — the semantic-support judge only covers
+  `DocumentCitation`s. A relevance gate was measured and **deliberately
+  deferred** (23% false-reject on valid claims). A structurally-valid but
+  topically-irrelevant citation can pass verification — a fabrication/citation-
+  laundering surface with published exposure numbers.
+- **Prompt fragility as a weapon (issue #123).** Additive, topically-unrelated
+  planner-prompt changes reliably degrade previously-verified cases, and an
+  observed run produced a **false-positive `verified`** via a coincidentally-
+  matching irrelevant field. Attack the planner's context sensitivity directly.
+- **Document-fact → answer composition (issue #86).** Ingested lab/intake facts
+  now flow into answer composition; the one live-recorded injection case
+  (#70, `evals/cases/injection/lab-fact-cross-patient-injection.yaml`) exercises
+  only "layer 1" — the deterministic fail-closed strip is **not** yet exercised
+  live. A fresh injection surface with honest, documented coverage gaps.
+- **Honest baseline = 7/12 `citation_present`,** with the 5 non-passing cases
+  documented (3 = the trust layer correctly declining, 2 = the #123 mechanism).
+  Attacks that flip a documented-honest decline into a confident wrong answer
+  are high-value.
+- **Operational surface (issue #140):** live recordings can run against stale
+  in-container code unless a stamp guard is honored — relevant to any
+  replay-based attack harness you build against the target.
+
 ## Hard constraint — genuine multi-agent with separated trust
 
 A single-agent or linear pipeline **fails the assignment outright**. Attack generation and evaluation must **not share context** ("conflict of interest by design"). Architectural independence (separate process/context), not just separate prompts.
@@ -58,4 +88,10 @@ A single-agent or linear pipeline **fails the assignment outright**. Attack gene
 
 ## Execution handoff
 
-**Refine the Phase 3 kickoff prompt at the end of Phase 2** so it points at Phase 2's real attack surface (ingestion endpoints, worker handoffs, citation contract) rather than assumptions. Then open a fresh Claude Code session **inside** `C:\Users\franc\Projects\agentforge-3-redteam` (create it: `git init` + `gh repo create agentforge-3-redteam --private --source=. --remote=origin`), paste the Phase 3 kickoff prompt from `instructions/INITIAL_PROMPT.md`, let it plan-before-build, then run the stages above.
+The Phase 3 kickoff prompt was refined at the end of Phase 2 (issue #29) and now
+points at Phase 2's **real, measured** attack surface — it lives at
+`planning/PHASE3_KICKOFF_PROMPT.md` (this repo). To start: open a fresh Claude
+Code session **inside this repo's folder**, paste `planning/PHASE3_KICKOFF_PROMPT.md`,
+let it plan-before-build, then run the stages above. Clone the target
+(`agentforge-2-evidence-agent`, pin tag `v2.0.0`) separately and stand it up per
+Stage 1 before the red team runs.

@@ -29,7 +29,7 @@ The standard, straight from the Phase 1 brief: *"The deliverable that matters is
 Run these stages in order. Each has a verification gate — don't move on until it passes.
 
 ### Stage 1 — Foundation
-- Clone/fork the base codebase into its own directory under `C:\Users\franc\Projects\` (NOT inside this master folder).
+- Clone/fork the base codebase into its own directory under your local projects folder (NOT inside this master folder).
 - Get it running locally with sample data; document setup as you go (this becomes the README setup guide).
 - **Gate:** app runs from a fresh clone with one documented command.
 

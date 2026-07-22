@@ -22,8 +22,11 @@ Threat model maps to OWASP Top 10 + OWASP LLM Top 10. Red Team role runs a
 **local uncensored model** (so it won't refuse offensive tasks) — consistent
 with the fully-local, no-PHI-egress posture of the whole AgentForge series.
 
-See `planning/` for the brief, the delivery playbook, the full plan, and the
-paste-ready kickoff prompt.
+See `planning/` for the brief, the delivery playbook, and the full plan. The
+authoritative, paste-ready kickoff is **`planning/PHASE3_KICKOFF_PROMPT.md`** —
+grounded in Phase 2's real, measured attack surface (issue #29), superseding the
+older generic `planning/KICKOFF_PROMPT.md`. The attack target is frozen at tag
+**`v2.0.0`**.
 
 ## AgentForge series
 
