@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "directive_id": "dir-0001",
+  "issued_at": "2026-07-21T10:00:00Z",
+  "category": "identity_authz",
+  "budget": { "max_draws": 3, "max_cost_usd": 0.5 },
+  "next_case": { "selector": "case_id", "case_id": "identity-authz-garbage-bearer-token" }
+}

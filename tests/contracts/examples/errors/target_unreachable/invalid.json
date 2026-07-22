@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0.0",
+  "error_type": "budget_exceeded",
+  "message": "connection refused",
+  "target_url": "http://development-easy-agent-1:8000/chat",
+  "attempted_at": "2026-07-21T10:10:00Z",
+  "retry_count": -1
+}

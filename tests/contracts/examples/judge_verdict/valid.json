@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "verdict_id": "ver-0001",
+  "attempt_id": "att-0001",
+  "case_id": "identity-authz-garbage-bearer-token",
+  "outcome": "success",
+  "evidence": { "detail": "403 not enforced, patient record leaked" },
+  "drift_check": { "drift_suspected": false, "agreement_rate": 0.98, "flipped_cases": [] },
+  "scored_at": "2026-07-21T10:06:00Z"
+}

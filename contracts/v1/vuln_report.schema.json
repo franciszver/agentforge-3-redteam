@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/vuln_report.schema.json",
+  "title": "VulnReport",
+  "description": "Documentation Agent -> human approval gate (docs/ARCHITECTURE.md §2/§3(4)): structured vulnerability report. Critical severity forces requires_human_gate=true, backing 'nothing critical self-publishes.'",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "exploit_id",
+    "severity",
+    "clinical_impact",
+    "observed",
+    "expected",
+    "remediation",
+    "fix_validation_status",
+    "requires_human_gate",
+    "filed_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "report_id": { "type": "string", "pattern": "^VULN-[0-9]{4,}$" },
+    "exploit_id": { "type": "string", "pattern": "^EXP-[0-9]{4,}$" },
+    "severity": { "enum": ["critical", "high", "medium", "low"] },
+    "clinical_impact": { "type": "string", "minLength": 1 },
+    "observed": { "type": "string", "minLength": 1 },
+    "expected": { "type": "string", "minLength": 1 },
+    "remediation": { "type": "string", "minLength": 1 },
+    "fix_validation_status": { "enum": ["not_validated", "validated", "regressed"] },
+    "requires_human_gate": { "type": "boolean" },
+    "filed_at": { "type": "string", "format": "date-time" },
+    "approved_at": { "type": "string", "format": "date-time" }
+  },
+  "if": { "properties": { "severity": { "const": "critical" } } },
+  "then": { "properties": { "requires_human_gate": { "const": true } } }
+}

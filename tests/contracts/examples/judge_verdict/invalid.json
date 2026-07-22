@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "verdict_id": "ver-0002",
+  "attempt_id": "att-0002",
+  "case_id": "bad-case",
+  "outcome": "maybe",
+  "evidence": {},
+  "drift_check": { "drift_suspected": true, "agreement_rate": 1.4, "flipped_cases": ["c1", "c1"] },
+  "scored_at": "2026-07-21T10:06:00Z"
+}

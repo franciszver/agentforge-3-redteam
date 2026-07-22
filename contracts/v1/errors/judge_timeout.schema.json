@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/errors/judge_timeout.schema.json",
+  "title": "JudgeTimeoutError",
+  "description": "Judge Agent -> Orchestrator: the Judge failed to produce a judge_verdict for an attempt within its scoring deadline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "error_type", "message", "attempt_id", "case_id", "timeout_seconds"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "error_type": { "const": "judge_timeout" },
+    "message": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 }
+  }
+}

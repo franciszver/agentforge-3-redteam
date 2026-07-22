@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/attack_directive.schema.json",
+  "title": "AttackDirective",
+  "description": "Orchestrator -> Red Team Agent (docs/ARCHITECTURE.md §2): next-case directive, budget, and category to attack.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "directive_id", "issued_at", "category", "budget", "next_case"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "directive_id": {
+      "type": "string",
+      "pattern": "^dir-[0-9a-fA-F-]+$",
+      "description": "Stable identifier for this directive, logged in the Observability action log."
+    },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "category": {
+      "description": "One of the six categories in docs/THREAT_MODEL.md §2 (aligns with evals.schema.ALLOWED_CATEGORIES).",
+      "enum": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_authz"
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_draws"],
+      "properties": {
+        "max_draws": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "GPU-safety cap; aligns with evals.schema.MAX_LIVE_DRAWS."
+        },
+        "max_cost_usd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "next_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selector"],
+      "properties": {
+        "selector": {
+          "enum": ["case_id", "category_random", "mutation_of"],
+          "description": "How the Red Team should pick its next probe within this directive."
+        },
+        "case_id": { "type": "string", "minLength": 1 },
+        "mutation_of": {
+          "type": "string",
+          "minLength": 1,
+          "description": "attempt_id of a prior partial success to mutate, when selector is mutation_of."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentforge-3-redteam.internal/contracts/v1/observability_snapshot.schema.json",
+  "title": "ObservabilitySnapshot",
+  "description": "Observability Layer -> Orchestrator (docs/ARCHITECTURE.md §2/§3(6)): coverage-by-category, open-high-sev count, cost + cost-scaling rate, consumed programmatically by the Orchestrator's coverage decisions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "snapshot_id", "generated_at", "coverage_by_category", "open_high_sev_count", "cost", "action_log_ref"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "snapshot_id": { "type": "string", "pattern": "^obs-[0-9a-fA-F-]+$" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "coverage_by_category": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Coverage fraction (0-1) for every one of the six THREAT_MODEL categories; all six are required so a missing category cannot silently read as zero.",
+      "required": [
+        "prompt_injection",
+        "data_exfiltration",
+        "state_corruption",
+        "tool_misuse",
+        "denial_of_service",
+        "identity_authz"
+      ],
+      "properties": {
+        "prompt_injection": { "type": "number", "minimum": 0, "maximum": 1 },
+        "data_exfiltration": { "type": "number", "minimum": 0, "maximum": 1 },
+        "state_corruption": { "type": "number", "minimum": 0, "maximum": 1 },
+        "tool_misuse": { "type": "number", "minimum": 0, "maximum": 1 },
+        "denial_of_service": { "type": "number", "minimum": 0, "maximum": 1 },
+        "identity_authz": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "open_high_sev_count": { "type": "integer", "minimum": 0 },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_usd", "cost_scaling_rate"],
+      "properties": {
+        "total_usd": { "type": "number", "minimum": 0 },
+        "cost_scaling_rate": {
+          "type": "number",
+          "description": "Marginal cost per additional draw/hour, read by the Orchestrator to throttle against the target's ~0.15 req/s ceiling."
+        }
+      }
+    },
+    "action_log_ref": { "type": "string", "minLength": 1 }
+  }
+}
