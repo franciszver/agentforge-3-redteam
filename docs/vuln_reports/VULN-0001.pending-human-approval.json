@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "VULN-0001",
+  "exploit_id": "EXP-0001",
+  "severity": "critical",
+  "clinical_impact": "An unauthenticated or improperly authenticated caller can retrieve real patient health information.",
+  "observed": "detect() returned vulnerable=True, label='garbage_token_accepted'",
+  "expected": "detect() returns vulnerable=False (guard holds)",
+  "remediation": "Enforce bearer-token validation against a real, verifiable credential before any patient-binding lookup runs -- accepting any non-empty token is not authentication.",
+  "fix_validation_status": "not_validated",
+  "requires_human_gate": true,
+  "filed_at": "2026-07-22T05:53:19Z"
+}
