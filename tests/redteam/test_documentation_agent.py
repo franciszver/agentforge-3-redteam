@@ -190,6 +190,14 @@ def test_pending_critical_report_not_persisted_until_approved(tmp_path):
     assert len(written) == 1
 
 
+def test_malformed_exploit_record_raises_documentation_agent_error_not_key_error():
+    """A caller catching this module's own error type for bad input must not
+    get a raw KeyError just because the missing field is on the input side."""
+    incomplete = {"exploit_id": "EXP-0001"}  # no category, no minimal_repro
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(incomplete, filed_at="2026-07-21T10:08:00Z")
+
+
 def test_all_categories_map_to_a_valid_severity_and_pass_schema():
     for category in (
         "prompt_injection",

@@ -1,0 +1,359 @@
+"""Documentation Agent (P3.9, issue #10; docs/ARCHITECTURE.md §3(4)/§6).
+
+Turns a Judge-confirmed ``ExploitRecord`` (contracts/v1/exploit_record.schema.json)
+into a structured ``VulnReport`` (contracts/v1/vuln_report.schema.json) that
+is reproducible by an engineer with zero platform context, WITHOUT requiring
+a live model -- gemma isn't wired yet, and this agent's core is not an
+adversarial-generation task the way the Red Team's is. Report fields derive
+deterministically from the exploit record via fixed, reviewable tables
+(``SEVERITY_BY_CATEGORY``, ``CLINICAL_IMPACT_BY_CATEGORY``,
+``REMEDIATION_BY_CATEGORY``); ``build_vuln_report`` is a pure function of its
+inputs, so the same exploit record always produces the same report.
+
+## The narrator seam
+
+``build_vuln_report(..., narrator=...)`` accepts an optional callable
+``(exploit_record, deterministic_report) -> {field: text}`` that can later be
+backed by a local instruct model to polish ``clinical_impact`` /
+``remediation`` prose. The narrator's return value is merged over the
+deterministic report and then re-validated against the contract -- it can
+only touch prose fields (safety-relevant fields -- ``severity``,
+``requires_human_gate``, ``report_id``, ``exploit_id``, ``schema_version`` --
+are stripped from its output before the merge, so a narrator cannot talk its
+way out of the human-approval gate). The default (``narrator=None``) is the
+plain deterministic template: fully tested, fully correct, no model
+dependency.
+
+## Human-approval trust boundary (docs/ARCHITECTURE.md §6)
+
+Per the contract's own ``if severity==critical then requires_human_gate:true``
+rule, ``DocumentationAgent.file_report`` NEVER auto-files a critical-severity
+report. It is held in a ``pending_human_approval`` state (not persisted,
+not returned via ``all_filed()``/``get_filed()``) until a human calls
+``DocumentationAgent.approve(exploit_id)``, which stamps ``approved_at`` and
+files it. Non-critical reports (``requires_human_gate=False``) are filed
+immediately -- "nothing critical self-publishes," not "nothing publishes."
+
+## Data-quality pre-write
+
+Every report -- whether about to be auto-filed or held pending -- is
+validated against ``vuln_report.schema.json`` with ``jsonschema`` before
+being accepted by the agent at all (mirrors ``redteam/harness/db.py``'s
+pre-write gate for exploit records). Duplicate-report protection reuses
+``contracts/v1/uniqueness.py``'s ``find_duplicate_exploit_id`` machinery
+(the same "one exploit, one confirmed record" rule the exploit DB enforces)
+rather than reimplementing a second uniqueness check: a report is keyed by
+its source ``exploit_id``, and a second report for the same ``exploit_id``
+-- filed OR still pending -- is rejected before it is accepted.
+
+## Where reports live
+
+``build_vuln_report`` is model-optional and side-effect-free -- it just
+returns a dict, useful directly in tests or a REPL. ``DocumentationAgent``
+adds the stateful pieces (validation, the human-approval gate, duplicate
+protection) and, if constructed with ``reports_dir``, persists each newly
+*filed* report (auto-filed or freshly approved) as
+``<reports_dir>/<report_id>.json`` -- a flat-file store is enough here
+because reports are terminal, append-only artifacts (unlike the exploit DB,
+nothing ever queries "which reports are open" across categories; that's the
+Observability Layer's job over ``ExploitDB`` + report severity, see
+``redteam/observability/findings.py``). Pending-approval reports are held
+only in memory until approved, by design -- they are not yet a filed
+artifact.
+
+## Why the vuln_report contract has no ``minimal_repro``/``recording_ref``
+
+``vuln_report.schema.json`` is ``additionalProperties: false`` and has no
+``steps``/``recording_ref`` field -- ``observed``/``expected`` are copied
+verbatim from the exploit record's ``minimal_repro`` onto the report, and
+the report's own ``exploit_id`` is the join key back to the full
+``ExploitRecord`` (its ``minimal_repro.steps`` and ``recording_ref``) in the
+exploit DB. That is what makes a filed report "reproducible by an engineer
+with zero platform context": the report names the impact and the fix, the
+linked exploit record holds the exact repro steps and replayable evidence.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Callable, Mapping
+
+from jsonschema import Draft202012Validator
+
+from contracts.v1.uniqueness import find_duplicate_exploit_ids
+from redteam.harness.db import now_iso
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_VULN_REPORT_SCHEMA_PATH = _REPO_ROOT / "contracts" / "v1" / "vuln_report.schema.json"
+
+Narrator = Callable[[Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]]
+
+# Deterministic severity-by-category table. identity_authz and
+# data_exfiltration both risk direct PHI exposure/misrepresentation to a
+# clinician (docs/THREAT_MODEL.md) -> critical. state_corruption/tool_misuse/
+# prompt_injection can cascade into those same outcomes via an agentic
+# action -> high. denial_of_service degrades availability, not confidentiality
+# or correctness of clinical data on its own -> medium. Any category this
+# table doesn't recognize defaults to "medium" (safe middle, never silently
+# "critical" or "low").
+SEVERITY_BY_CATEGORY: dict[str, str] = {
+    "identity_authz": "critical",
+    "data_exfiltration": "critical",
+    "state_corruption": "high",
+    "tool_misuse": "high",
+    "prompt_injection": "high",
+    "denial_of_service": "medium",
+}
+_DEFAULT_SEVERITY = "medium"
+
+CLINICAL_IMPACT_BY_CATEGORY: dict[str, str] = {
+    "identity_authz": (
+        "An unauthenticated or improperly authenticated caller can retrieve "
+        "real patient health information."
+    ),
+    "data_exfiltration": (
+        "A clinician can be shown medication/allergy/lab information that is "
+        "stale or contradicts the source record, while the platform marks it "
+        "verified."
+    ),
+    "state_corruption": (
+        "Patient-record state can be left inconsistent with its source of "
+        "truth, risking a clinician acting on incorrect data."
+    ),
+    "tool_misuse": (
+        "A tool can be invoked outside its intended scope, risking unintended "
+        "reads or writes against patient data."
+    ),
+    "prompt_injection": (
+        "Untrusted content can redirect the assistant's behavior, risking "
+        "disclosure or incorrect clinical guidance."
+    ),
+    "denial_of_service": (
+        "The service can be degraded or made unavailable, delaying clinician "
+        "access to patient information."
+    ),
+}
+_DEFAULT_CLINICAL_IMPACT = (
+    "Confirmed exploit against the clinical co-pilot target; see the linked "
+    "exploit record's minimal repro for the concrete impact."
+)
+
+REMEDIATION_BY_CATEGORY: dict[str, str] = {
+    "identity_authz": (
+        "Enforce bearer-token validation against a real, verifiable credential "
+        "before any patient-binding lookup runs -- accepting any non-empty "
+        "token is not authentication."
+    ),
+    "data_exfiltration": (
+        "Extend verification to check a cited record's own status/relevance, "
+        "not just its provenance: a citation to a discontinued/inactive record "
+        "must not back a 'currently taking/on' claim as verified."
+    ),
+    "state_corruption": (
+        "Add server-side invariant checks on state-mutating tool calls so a "
+        "manipulated turn cannot leave patient state inconsistent with the "
+        "source-of-truth record."
+    ),
+    "tool_misuse": (
+        "Constrain tool-call arguments and add a per-tool capability check so "
+        "a manipulated turn cannot invoke a tool outside its intended scope."
+    ),
+    "prompt_injection": (
+        "Segregate untrusted document/tool content from the system/instruction "
+        "channel and add an instruction-hierarchy check before acting on "
+        "embedded directives."
+    ),
+    "denial_of_service": (
+        "Enforce the documented input-size/rate bound in the actual request "
+        "path (not only in comments/docs) and fail closed with a typed error, "
+        "not a degraded 200."
+    ),
+}
+_DEFAULT_REMEDIATION = (
+    "Address the root cause identified in the linked exploit record's minimal "
+    "repro; see its recording_ref for full replayable evidence."
+)
+
+# Fields a narrator is not allowed to change via its return value -- the
+# safety-relevant/identity fields stay purely deterministic even when a
+# narrator is wired in.
+_NARRATOR_PROTECTED_FIELDS = frozenset(
+    {"schema_version", "report_id", "exploit_id", "severity", "requires_human_gate", "filed_at"}
+)
+
+
+class DocumentationAgentError(ValueError):
+    """A report failed pre-write validation, duplicated an existing report,
+    or an approval/query referenced an exploit_id the agent doesn't know."""
+
+
+def _load_vuln_report_schema() -> dict[str, Any]:
+    with _VULN_REPORT_SCHEMA_PATH.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _report_id_for(exploit_id: str) -> str:
+    """``EXP-0001`` -> ``VULN-0001``: one report per exploit, same numbering,
+    so the two IDs are trivially cross-referenceable by a human."""
+    if not exploit_id.startswith("EXP-"):
+        raise DocumentationAgentError(
+            f"cannot derive a report_id from exploit_id {exploit_id!r} (expected 'EXP-NNNN')"
+        )
+    return "VULN-" + exploit_id.split("-", 1)[1]
+
+
+def _require(exploit_record: Mapping[str, Any], key: str) -> Any:
+    """Same exception type (``DocumentationAgentError``) as every other
+    rejection this module raises -- a caller catching this module's own
+    error type to handle a bad input shouldn't get a raw ``KeyError``
+    instead just because the missing field happens to be on the input side
+    rather than the output side."""
+    try:
+        return exploit_record[key]
+    except KeyError:
+        raise DocumentationAgentError(
+            f"exploit_record missing required field {key!r}"
+        ) from None
+
+
+def build_vuln_report(
+    exploit_record: Mapping[str, Any],
+    *,
+    report_id: str | None = None,
+    filed_at: str | None = None,
+    fix_validation_status: str = "not_validated",
+    narrator: Narrator | None = None,
+) -> dict[str, Any]:
+    """Pure function: exploit_record -> vuln_report dict. No I/O, no model
+    call, no validation against the contract (callers that need the
+    pre-write gate should go through ``DocumentationAgent.file_report``).
+    """
+    exploit_id = _require(exploit_record, "exploit_id")
+    category = _require(exploit_record, "category")
+    repro = _require(exploit_record, "minimal_repro")
+    severity = SEVERITY_BY_CATEGORY.get(category, _DEFAULT_SEVERITY)
+
+    report: dict[str, Any] = {
+        "schema_version": "1.0.0",
+        "report_id": report_id or _report_id_for(exploit_id),
+        "exploit_id": exploit_id,
+        "severity": severity,
+        "clinical_impact": CLINICAL_IMPACT_BY_CATEGORY.get(category, _DEFAULT_CLINICAL_IMPACT),
+        "observed": _require(repro, "observed"),
+        "expected": _require(repro, "expected"),
+        "remediation": REMEDIATION_BY_CATEGORY.get(category, _DEFAULT_REMEDIATION),
+        "fix_validation_status": fix_validation_status,
+        "requires_human_gate": severity == "critical",
+        "filed_at": filed_at or now_iso(),
+    }
+
+    if narrator is not None:
+        overrides = dict(narrator(exploit_record, report))
+        for protected in _NARRATOR_PROTECTED_FIELDS:
+            overrides.pop(protected, None)
+        report.update(overrides)
+
+    return report
+
+
+class DocumentationAgent:
+    """Stateful wrapper: pre-write schema validation, the critical-severity
+    human-approval gate, and duplicate-report protection around
+    ``build_vuln_report``.
+    """
+
+    def __init__(
+        self,
+        *,
+        reports_dir: str | Path | None = None,
+        schema: Mapping[str, Any] | None = None,
+    ):
+        self._schema = dict(schema) if schema is not None else _load_vuln_report_schema()
+        self._validator = Draft202012Validator(self._schema)
+        self._reports_dir = Path(reports_dir) if reports_dir is not None else None
+        if self._reports_dir is not None:
+            self._reports_dir.mkdir(parents=True, exist_ok=True)
+        self._filed: dict[str, dict[str, Any]] = {}
+        self._pending: dict[str, dict[str, Any]] = {}
+
+    def _validate(self, report: Mapping[str, Any]) -> None:
+        errors = sorted(self._validator.iter_errors(report), key=lambda e: list(e.path))
+        if errors:
+            messages = "; ".join(f"{list(e.path)}: {e.message}" for e in errors)
+            raise DocumentationAgentError(f"vuln_report failed schema validation: {messages}")
+
+    def _reject_if_duplicate(self, exploit_id: str) -> None:
+        existing = list(self._filed.values()) + list(self._pending.values())
+        candidate = {"exploit_id": exploit_id}
+        if find_duplicate_exploit_ids(existing + [candidate]):
+            raise DocumentationAgentError(
+                f"a vuln report already exists for exploit_id {exploit_id!r} "
+                "(filed or pending human approval) -- one exploit, one report"
+            )
+
+    def _persist(self, report: Mapping[str, Any]) -> None:
+        if self._reports_dir is None:
+            return
+        path = self._reports_dir / f"{report['report_id']}.json"
+        path.write_text(json.dumps(dict(report), indent=2), encoding="utf-8")
+
+    def file_report(
+        self,
+        exploit_record: Mapping[str, Any],
+        *,
+        report_id: str | None = None,
+        filed_at: str | None = None,
+        fix_validation_status: str = "not_validated",
+        narrator: Narrator | None = None,
+    ) -> dict[str, Any]:
+        """Build, validate, and either auto-file (non-critical) or hold for
+        human approval (critical) a report for ``exploit_record``. Raises
+        ``DocumentationAgentError`` if the report is schema-invalid or a
+        report for this ``exploit_id`` already exists.
+        """
+        exploit_id = exploit_record["exploit_id"]
+        self._reject_if_duplicate(exploit_id)
+
+        report = build_vuln_report(
+            exploit_record,
+            report_id=report_id,
+            filed_at=filed_at,
+            fix_validation_status=fix_validation_status,
+            narrator=narrator,
+        )
+        self._validate(report)
+
+        if report["requires_human_gate"]:
+            self._pending[exploit_id] = report
+            return {**report, "status": "pending_human_approval"}
+
+        self._filed[exploit_id] = report
+        self._persist(report)
+        return {**report, "status": "filed"}
+
+    def approve(self, exploit_id: str, *, approved_at: str | None = None) -> dict[str, Any]:
+        """Human-approval gate: the only path a pending critical report can
+        take to becoming filed. Raises ``DocumentationAgentError`` if there
+        is no pending report for ``exploit_id``.
+        """
+        if exploit_id not in self._pending:
+            raise DocumentationAgentError(f"no pending report for exploit_id {exploit_id!r}")
+        report = dict(self._pending.pop(exploit_id))
+        report["approved_at"] = approved_at or now_iso()
+        self._validate(report)
+        self._filed[exploit_id] = report
+        self._persist(report)
+        return {**report, "status": "filed"}
+
+    def get_filed(self, exploit_id: str) -> dict[str, Any] | None:
+        return self._filed.get(exploit_id)
+
+    def get_pending(self, exploit_id: str) -> dict[str, Any] | None:
+        return self._pending.get(exploit_id)
+
+    def all_filed(self) -> list[dict[str, Any]]:
+        return list(self._filed.values())
+
+    def all_pending(self) -> list[dict[str, Any]]:
+        return list(self._pending.values())
