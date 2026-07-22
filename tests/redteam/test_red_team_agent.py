@@ -252,6 +252,70 @@ def test_generate_multi_turn_sequence_shares_sequence_id_and_increasing_turns():
     assert "turn two probe" in fake.prompts[2]
 
 
+def test_mutate_partial_payload_split_handles_single_word_message():
+    """Regression: a single-word message has no space to split on -- the
+    payload_split strategy must still emit two non-empty (contract-valid)
+    turns instead of crashing with an empty-message schema failure."""
+    fake = FakeModelClient(responses=["rephrased", "repositioned"])
+    agent = RedTeamAgent(model_client=fake)
+    partial_attempt = {
+        "attempt_id": "att-partial0002",
+        "case_id": "prompt-injection-case",
+        "category": "prompt_injection",
+        "owasp_web": CATEGORY_METADATA["prompt_injection"]["owasp_web"],
+        "owasp_llm": CATEGORY_METADATA["prompt_injection"]["owasp_llm"],
+        "surface_ref": CATEGORY_METADATA["prompt_injection"]["surface_ref"],
+        "patient_id": 2,
+        "message": "SystemOverride",
+        "draw_number": 1,
+        "issued_at": "2026-07-21T00:00:00Z",
+    }
+
+    variants = agent.mutate_partial(partial_attempt, strategies=("payload_split",))
+
+    assert len(variants) == 2
+    for v in variants:
+        _validate(v)
+        assert v["message"]  # non-empty, per contract minLength: 1
+
+
+def test_generate_attempts_rejects_explicit_attempt_id():
+    """Regression: an explicit attempt_id forwarded to every draw would
+    collide across the whole batch -- must be rejected, not silently
+    applied to all n attempts."""
+    fake = FakeModelClient()
+    agent = RedTeamAgent(model_client=fake)
+    directive = _directive(category="denial_of_service", selector="category_random")
+
+    with pytest.raises(RedTeamAgentError):
+        agent.generate_attempts(directive, attempt_id="att-fixed-for-all-draws")
+
+
+def test_ollama_model_client_wraps_malformed_json_response(monkeypatch):
+    """Regression: a non-JSON ollama response must raise RedTeamAgentError,
+    not a raw json.JSONDecodeError."""
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b"not json at all"
+
+    def _fake_urlopen(req, timeout=None):
+        return _FakeResponse()
+
+    import urllib.request
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    with pytest.raises(RedTeamAgentError):
+        ollama_model_client("a test prompt")
+
+
 def test_generate_attempt_raises_on_empty_model_output():
     fake = FakeModelClient(responses=["   "])
     agent = RedTeamAgent(model_client=fake)
