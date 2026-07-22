@@ -31,7 +31,7 @@ rule, ``DocumentationAgent.file_report`` NEVER auto-files a critical-severity
 report. It is held in a ``pending_human_approval`` state (not persisted,
 not returned via ``all_filed()``/``get_filed()``) until a human calls
 ``DocumentationAgent.approve(exploit_id)``, which stamps ``approved_at`` and
-files it. Non-critical reports (``requires_human_gate=False``) are filed
+``approved_by`` and files it. Non-critical reports (``requires_human_gate=False``) are filed
 immediately -- "nothing critical self-publishes," not "nothing publishes."
 
 ## Data-quality pre-write
@@ -332,15 +332,26 @@ class DocumentationAgent:
         self._persist(report)
         return {**report, "status": "filed"}
 
-    def approve(self, exploit_id: str, *, approved_at: str | None = None) -> dict[str, Any]:
+    def approve(
+        self,
+        exploit_id: str,
+        *,
+        approved_at: str | None = None,
+        approved_by: str = "owner",
+    ) -> dict[str, Any]:
         """Human-approval gate: the only path a pending critical report can
-        take to becoming filed. Raises ``DocumentationAgentError`` if there
-        is no pending report for ``exploit_id``.
+        take to becoming filed. Stamps both ``approved_at`` (defaults to
+        now) and ``approved_by`` (defaults to ``"owner"`` -- the human who
+        sits at this gate per docs/ARCHITECTURE.md §6; pass an explicit
+        value for any other approving identity). Raises
+        ``DocumentationAgentError`` if there is no pending report for
+        ``exploit_id``.
         """
         if exploit_id not in self._pending:
             raise DocumentationAgentError(f"no pending report for exploit_id {exploit_id!r}")
         report = dict(self._pending.pop(exploit_id))
         report["approved_at"] = approved_at or now_iso()
+        report["approved_by"] = approved_by
         self._validate(report)
         self._filed[exploit_id] = report
         self._persist(report)
