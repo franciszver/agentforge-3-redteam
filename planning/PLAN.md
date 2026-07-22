@@ -1,5 +1,7 @@
 # Plan: Complete AgentForge Phase 3 — Adversarial Security & Red-Team Platform
 
+> **Frozen.** This plan was imported to **[GitHub Project #4, "AgentForge Red-Team Platform"](https://github.com/users/franciszver/projects/4)**. The board plus `prd/DECISIONS.md` are the live source of truth going forward; this document is not updated further.
+
 *Companion plan: `complete-agentforge-2-evidence-agent.md` (Phase 2). This phase runs after Phase 2 is frozen and attacks the Phase 2 co-pilot.*
 
 ## Decisions locked (2026-07-17)
