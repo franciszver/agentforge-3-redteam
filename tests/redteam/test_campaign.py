@@ -150,18 +150,18 @@ def test_full_loop_yields_stored_exploit_and_filed_vuln_report(tmp_path):
     assert "vuln_report_filed" in event_types_seen
 
 
-def test_dos_known_false_positive_is_not_auto_filed(tmp_path):
-    """The REAL ``DOS_CASE`` (``evals/cases/dos_input_bound.py``): its
-    black-box ``detect`` genuinely cannot distinguish "guard absent" from
-    "guard fired, rejection swallowed fail-soft" (see
-    ``docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`` /
-    ``docs/TRIAGE_LAB.md`` TRI-013) -- a 200+answer response scores
-    ``outcome == "success"`` exactly as it did before this fix. What must
-    change is the FILING step: a documented known-false-positive must not
-    auto-file a vuln report or an ExploitDB record. This is the red-first
-    case for that fix; before ``AttackCase.known_false_positive_ref`` +
-    ``run_campaign``'s filing guard existed, this scenario auto-filed a
-    report exactly like the case above."""
+def test_dos_novel_payload_in_category_still_files_and_records(tmp_path):
+    """A NOVEL ``denial_of_service`` payload (the default fake model_client's
+    completion, which is NOT ``DOS_CASE.message``) that scores
+    ``outcome == "success"`` must be recorded AND filed like any other
+    confirmed exploit -- ``AttackCase.known_false_positive_ref`` documents
+    ONE specific, already-triaged probe (issue #25 / TRI-013), not "any
+    attempt whatsoever in this category". Before this fix, the filing guard
+    kept ``cases_by_category`` (one representative case per category) and
+    suppressed EVERY confirmed ``denial_of_service`` outcome regardless of
+    the actual payload, silently dropping the raw target response (no
+    ``record_run``, no ``ExploitDB`` entry) for novel exploits that have
+    nothing to do with the documented false positive."""
     recordings_dir = tmp_path / "recordings"
     db, action_log, documentation, judge, red_team, orchestrator = _new_agents(recordings_dir)
 
@@ -180,22 +180,148 @@ def test_dos_known_false_positive_is_not_auto_filed(tmp_path):
         snapshot_fn=lambda: _full_coverage_snapshot("denial_of_service"),
     )
 
+    # The novel payload actually sent is not the documented probe.
+    assert result.attempts[0]["message"] != DOS_CASE.message
+    assert result.verdicts[0]["outcome"] == "success"
+
+    # A novel confirmed exploit in this category is recorded AND filed --
+    # the documented false positive is narrower than "this category".
+    assert len(result.exploit_ids) == 1
+    exploit_id = result.exploit_ids[0]
+    stored = db.get(exploit_id)
+    assert stored is not None
+    assert stored["record"]["case_id"] == DOS_CASE.id
+
+    assert len(result.filed_reports) == 1
+    assert result.pending_reports == []
+    assert documentation.get_filed(exploit_id) is not None
+
+    event_types_seen = {e["event_type"] for e in action_log.query()}
+    assert "exploit_recorded" in event_types_seen
+    assert "vuln_report_filed" in event_types_seen
+    assert "known_false_positive_suppressed" not in event_types_seen
+
+
+def test_dos_documented_probe_is_recorded_but_report_suppressed(tmp_path):
+    """Replaying the EXACT documented probe (``attempt["message"] ==
+    DOS_CASE.message``, issue #25 / TRI-013) must still record the run
+    (``record_run`` + ``ExploitDB.add_record`` -- never destroy the raw
+    target response) but must NOT auto-file a vuln report for it, since
+    that specific probe/response shape is already triaged as benign."""
+    recordings_dir = tmp_path / "recordings"
+    db, action_log, documentation, judge, _red_team, orchestrator = _new_agents(recordings_dir)
+    red_team = RedTeamAgent(model_client=lambda prompt: DOS_CASE.message)
+
+    result = run_campaign(
+        orchestrator=orchestrator,
+        red_team=red_team,
+        judge=judge,
+        documentation=documentation,
+        db=db,
+        action_log=action_log,
+        action_log_ref=tmp_path / "action_log.jsonl",
+        cases=[DOS_CASE, AUTHZ_CASE],
+        target_client=lambda attempt: _vulnerable_response(),
+        max_iterations=1,
+        recordings_dir=recordings_dir,
+        snapshot_fn=lambda: _full_coverage_snapshot("denial_of_service"),
+    )
+
+    # ``generate_attempt``'s category_random path always ``.strip()``s the
+    # model's completion (red_team.py), so compare stripped -- a
+    # trailing-whitespace-only difference must not defeat the "this is the
+    # documented probe" match.
+    assert result.attempts[0]["message"].strip() == DOS_CASE.message.strip()
     # The Judge still scores this honestly as "success" -- the black-box
     # detect() is not being papered over, only the auto-filing is guarded.
     assert result.verdicts[0]["outcome"] == "success"
 
-    # Nothing gets auto-filed or auto-recorded as an exploit for a
-    # documented known false positive.
-    assert result.exploit_ids == []
+    # The confirmed exploit IS recorded -- the evidence is never dropped.
+    assert len(result.exploit_ids) == 1
+    exploit_id = result.exploit_ids[0]
+    stored = db.get(exploit_id)
+    assert stored is not None
+    assert stored["record"]["case_id"] == DOS_CASE.id
+
+    # Only the report is suppressed.
     assert result.filed_reports == []
     assert result.pending_reports == []
-    assert db.all_records() == []
     assert documentation.all_filed() == []
 
     event_types_seen = {e["event_type"] for e in action_log.query()}
+    assert "exploit_recorded" in event_types_seen
     assert "known_false_positive_suppressed" in event_types_seen
     assert "vuln_report_filed" not in event_types_seen
-    assert "exploit_recorded" not in event_types_seen
+
+
+class _ForceOutcomeJudge:
+    """Wraps a real ``JudgeAgent`` but overrides the ``outcome`` on the
+    verdict it returns. ``run_campaign`` never threads ``previously_confirmed``
+    into its own ``judge.score`` call (out of scope for this fix), so this
+    is the deterministic seam used to exercise the campaign guard's
+    "regression" path without needing a live/replay regression sweep."""
+
+    def __init__(self, judge: JudgeAgent, forced_outcome: str):
+        self._judge = judge
+        self._forced_outcome = forced_outcome
+
+    def score(self, case, response, *, attempt_id, previously_confirmed=False, verdict_id=None, scored_at=None):
+        verdict = self._judge.score(
+            case,
+            response,
+            attempt_id=attempt_id,
+            previously_confirmed=previously_confirmed,
+            verdict_id=verdict_id,
+            scored_at=scored_at,
+        )
+        return {**verdict, "outcome": self._forced_outcome}
+
+    def check_drift(self):
+        return self._judge.check_drift()
+
+
+def test_regression_outcome_is_recorded_not_swallowed(tmp_path):
+    """A ``regression`` outcome on ``DOS_CASE`` (which carries a
+    ``known_false_positive_ref``) with a NOVEL payload must be recorded AND
+    filed exactly like a "success" outcome would be -- before this fix, the
+    filing guard fired on ANY ``outcome_confirmed`` (``success`` OR
+    ``regression``) for a case with ``known_false_positive_ref`` set,
+    silently discarding the raw target response with no ``record_run`` and
+    no ``ExploitDB`` entry at all."""
+    recordings_dir = tmp_path / "recordings"
+    db, action_log, documentation, real_judge, red_team, orchestrator = _new_agents(recordings_dir)
+    judge = _ForceOutcomeJudge(real_judge, "regression")
+
+    result = run_campaign(
+        orchestrator=orchestrator,
+        red_team=red_team,
+        judge=judge,
+        documentation=documentation,
+        db=db,
+        action_log=action_log,
+        action_log_ref=tmp_path / "action_log.jsonl",
+        cases=[DOS_CASE, AUTHZ_CASE],
+        target_client=lambda attempt: _vulnerable_response(),
+        max_iterations=1,
+        recordings_dir=recordings_dir,
+        snapshot_fn=lambda: _full_coverage_snapshot("denial_of_service"),
+    )
+
+    assert result.attempts[0]["message"] != DOS_CASE.message
+    assert result.verdicts[0]["outcome"] == "regression"
+
+    assert len(result.exploit_ids) == 1
+    exploit_id = result.exploit_ids[0]
+    stored = db.get(exploit_id)
+    assert stored is not None
+
+    assert len(result.filed_reports) == 1
+    assert documentation.get_filed(exploit_id) is not None
+
+    event_types_seen = {e["event_type"] for e in action_log.query()}
+    assert "exploit_recorded" in event_types_seen
+    assert "vuln_report_filed" in event_types_seen
+    assert "known_false_positive_suppressed" not in event_types_seen
 
 
 def test_critical_finding_stays_pending_human_approval(tmp_path):
