@@ -278,8 +278,9 @@ def build_vuln_report(
 
 
 class DocumentationAgent:
-    """Stateful wrapper: pre-write schema validation, the critical-severity
-    human-approval gate, and duplicate-report protection around
+    """Stateful wrapper: pre-write schema validation, the human-approval
+    gate (critical-severity, or ``force_human_gate=True`` regardless of
+    severity -- issue #55), and duplicate-report protection around
     ``build_vuln_report``.
     """
 
@@ -361,9 +362,10 @@ class DocumentationAgent:
         approved_at: str | None = None,
         approved_by: str = "owner",
     ) -> dict[str, Any]:
-        """Human-approval gate: the only path a pending critical report can
-        take to becoming filed. Stamps both ``approved_at`` (defaults to
-        now) and ``approved_by`` (defaults to ``"owner"`` -- the human who
+        """Human-approval gate: the only path a pending report -- critical-
+        severity, or ``force_human_gate=True`` (e.g. ``denial_of_service``,
+        issue #55) -- can take to becoming filed. Stamps both ``approved_at``
+        (defaults to now) and ``approved_by`` (defaults to ``"owner"`` -- the human who
         sits at this gate per docs/ARCHITECTURE.md §6; pass an explicit
         value for any other approving identity). Raises
         ``DocumentationAgentError`` if there is no pending report for

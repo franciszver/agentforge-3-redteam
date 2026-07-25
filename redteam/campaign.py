@@ -73,7 +73,8 @@ until an existing case gives that category detection logic.
   loop stop (only a human calling ``JudgeAgent.reanchor()`` clears
   ``judge.halted`` per that module's docstring -- this loop keeps running,
   since it is autonomous end-to-end apart from Documentation's
-  critical-severity approval gate).
+  human-approval gate, forced for critical-severity findings and for the
+  whole ``denial_of_service`` category regardless of severity).
 
 ## The one human touchpoint
 
@@ -226,8 +227,9 @@ def run_campaign(
     handling.
 
     No human input between iterations -- the only human touchpoint anywhere
-    in this call is that a critical-severity report lands in
-    ``documentation``'s pending-approval state rather than being filed.
+    in this call is that a critical-severity report, or any confirmed
+    ``denial_of_service`` report regardless of severity (issue #55), lands
+    in ``documentation``'s pending-approval state rather than being filed.
     """
     if max_iterations < 1:
         raise CampaignError(f"max_iterations must be >= 1, got {max_iterations!r}")
