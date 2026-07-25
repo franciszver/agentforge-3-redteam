@@ -48,7 +48,11 @@ def _looks_like_retrieval_length_error(error_event: dict) -> bool:
 # actually being removed or bypassed) that produces the exact same
 # 200-with-answer shape. See ``CASE.known_false_positive_ref`` below for
 # how the campaign *filing* pipeline (not this detector) is kept from
-# auto-reporting the known false-positive reading of this exact shape.
+# auto-reporting the known false-positive reading of this exact shape --
+# note the run is still recorded (``record_run`` + ``ExploitDB.add_record``)
+# exactly like any other confirmed outcome; only the vuln-report step is
+# skipped, and only when the reproducing attempt is this exact documented
+# probe (message-for-message), not any novel payload in this category.
 def detect(response: ParsedResponse) -> DetectionResult:
     error_event = response.first("error")
     if error_event is not None and _looks_like_retrieval_length_error(error_event):
@@ -83,8 +87,12 @@ CASE = AttackCase(
     # this case's "success"/`guard_not_held` outcome on a live campaign run
     # reproduces the exact shape docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md
     # and docs/TRIAGE_LAB.md TRI-013 document as dismissed-with-evidence,
-    # not a real vulnerability. `redteam.campaign.run_campaign` must not
-    # auto-file a vuln report for it -- see that module's filing guard.
+    # not a real vulnerability. `redteam.campaign.run_campaign` still
+    # records the confirmed outcome unconditionally (never drops the raw
+    # target response), but skips auto-filing a vuln report for it ONLY
+    # when the reproducing attempt's message matches this exact documented
+    # probe (``message`` above) -- a novel payload elsewhere in
+    # ``denial_of_service`` files normally. See that module's filing guard.
     known_false_positive_ref=(
         "docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md (issue #25, "
         "docs/TRIAGE_LAB.md TRI-013): the guard reachable on the dev-easy "
