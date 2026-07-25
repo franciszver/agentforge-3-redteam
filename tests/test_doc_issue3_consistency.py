@@ -28,13 +28,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-# Only committed, tracked Markdown files -- not the gitignored prd/ decision
-# log or any untracked scratch files.
-_MD_GLOB_EXCLUDES = {"prd"}
 
 _ISSUE3_RE = re.compile(r"issue #3\b")
 _DEFERRED_RE = re.compile(r"deferred", re.IGNORECASE)
@@ -48,6 +42,9 @@ _WINDOW = 150
 
 
 def _tracked_markdown_files() -> list[Path]:
+    """Every ``*.md`` file `git` tracks -- gitignored paths (e.g. ``prd/``)
+    never appear in ``git ls-files`` output, so no separate exclusion is
+    needed here."""
     import subprocess
 
     out = subprocess.run(
@@ -57,16 +54,7 @@ def _tracked_markdown_files() -> list[Path]:
         text=True,
         check=True,
     ).stdout
-    paths = []
-    for line in out.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = Path(line).parts
-        if parts and parts[0] in _MD_GLOB_EXCLUDES:
-            continue
-        paths.append(REPO_ROOT / line)
-    return paths
+    return [REPO_ROOT / line.strip() for line in out.splitlines() if line.strip()]
 
 
 def test_no_committed_doc_describes_issue3_as_deferred():
