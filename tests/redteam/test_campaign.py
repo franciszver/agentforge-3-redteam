@@ -204,7 +204,6 @@ def test_dos_novel_payload_is_recorded_and_gated_for_human_approval(tmp_path):
     assert "exploit_recorded" in event_types_seen
     assert "vuln_report_pending_human_approval" in event_types_seen
     assert "vuln_report_filed" not in event_types_seen
-    assert "known_false_positive_suppressed" not in event_types_seen
 
 
 def test_dos_exact_documented_probe_is_also_gated_not_suppressed(tmp_path):
@@ -253,6 +252,13 @@ def test_dos_exact_documented_probe_is_also_gated_not_suppressed(tmp_path):
     event_types_seen = {e["event_type"] for e in action_log.query()}
     assert "exploit_recorded" in event_types_seen
     assert "vuln_report_pending_human_approval" in event_types_seen
+    # Deliberate tripwire, not a dead assertion: the pre-#55 exact-probe
+    # message-match suppression mechanism (event_type
+    # "known_false_positive_suppressed") was removed entirely by this issue
+    # -- this string exists nowhere in production code today, and it must
+    # never come back, silently or otherwise. This is the one place in this
+    # file this assertion is kept; two duplicate copies elsewhere were
+    # removed as vacuous.
     assert "known_false_positive_suppressed" not in event_types_seen
     assert "vuln_report_filed" not in event_types_seen
 
@@ -328,7 +334,6 @@ def test_regression_outcome_in_dos_category_is_recorded_and_gated(tmp_path):
     event_types_seen = {e["event_type"] for e in action_log.query()}
     assert "exploit_recorded" in event_types_seen
     assert "vuln_report_pending_human_approval" in event_types_seen
-    assert "known_false_positive_suppressed" not in event_types_seen
     assert "vuln_report_filed" not in event_types_seen
 
 
