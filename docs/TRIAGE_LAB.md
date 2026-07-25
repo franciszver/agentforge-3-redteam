@@ -466,18 +466,27 @@
   Kept as its own line item (not merged into TRI-010) because — unlike
   TRI-010's guards, which were dismissed on inspection alone — this one
   required an actual multi-hop trace to resolve, which is now on record.
-  **Known limitation (tracked at issue #55, open):** the code fix landed
-  in this PR only suppresses auto-filing a `denial_of_service` report for
+  **Limitation resolved (issue #55, closed):** the fix that originally
+  landed here only suppressed auto-filing a `denial_of_service` report for
   the exact documented probe shape; `Orchestrator._pick_next_case` never
-  emits a `case_id` in the live campaign loop, so that suppression branch
-  is unreachable live — a live campaign can still auto-file a
-  `denial_of_service` report for a novel overlong-query payload, because
-  `dos_input_bound.detect` cannot distinguish "guard absent" from "guard
-  fired then swallowed" from a 200-with-an-`answer` alone. Nothing in
-  this document should be read as claiming the fix protects the live
-  loop against that false positive. The known-FP annotation this PR adds
-  also lives only in the `ActionLog`, not on the `ExploitDB` record
-  itself (`exploit_record.schema.json` is `additionalProperties: false`).
+  emits a `case_id` in the live campaign loop, so that message-match
+  suppression branch was unreachable live — a live campaign could still
+  auto-file a `denial_of_service` report for a novel overlong-query
+  payload, because `dos_input_bound.detect` cannot distinguish "guard
+  absent" from "guard fired then swallowed" from a 200-with-an-`answer`
+  alone. Issue #55 replaced that unreachable, message-specific suppression
+  with a category-level gate: `redteam.campaign.run_campaign` now forces
+  every confirmed `denial_of_service` outcome — this exact probe included,
+  and any novel payload in the category — through
+  `DocumentationAgent`'s human-approval gate
+  (`file_report(..., force_human_gate=True)`), the same mechanism a
+  critical-severity finding uses, rather than trying to auto-decide which
+  reading is correct. The finding is always recorded to `ExploitDB`
+  (`record_run`/`add_record` stay unconditional); only whether the vuln
+  report auto-publishes differs, and for this category it never does. The
+  category-level dead-code cleanup also removed the now-unnecessary
+  `AttackCase.known_false_positive_ref` field and its `ActionLog`-only
+  annotation entirely, since the gate it partially backed is superseded.
 
 ---
 

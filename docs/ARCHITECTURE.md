@@ -14,11 +14,13 @@
   made here. (#25 is since resolved — see TRI-013 in `docs/TRIAGE_LAB.md`
   and `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`: dismissed-with-evidence,
   narrowly, for the `MAX_QUERY_CHARS` retrieval-hop hypothesis only. That
-  resolution also surfaced a limitation in this PR's own fix, tracked open
-  at issue #55: `Orchestrator._pick_next_case` never emits `case_id` in the
-  live loop, so the exact-probe suppression branch it adds is unreachable
-  live — a live campaign can still auto-file a `denial_of_service` report
-  for a novel overlong-query payload.)
+  resolution surfaced a limitation in that PR's fix — `Orchestrator
+  ._pick_next_case` never emits `case_id` in the live loop, so a
+  message-match suppression branch was unreachable live — which issue #55
+  then closed: `denial_of_service` confirmations are no longer suppressed
+  by message match at all; every confirmed finding in that category is
+  routed through `DocumentationAgent`'s human-approval gate instead. See
+  §6 below.)
 
 ## 1. Prose summary (~500 words)
 
@@ -151,7 +153,13 @@ peek at another's context.
    observed-vs-expected, remediation, fix-validation status) that a fresh
    engineer can act on without platform context. A human-approval gate sits
    between this agent and filing any critical-severity report — nothing
-   critical self-publishes.
+   critical self-publishes. The same gate is also forced open, independent
+   of severity, for the whole `denial_of_service` category (issue #55):
+   `evals.cases.dos_input_bound.detect` cannot reliably distinguish a real
+   guard failure from a guard that fired and was fail-soft-swallowed, so
+   every confirmed `denial_of_service` finding is filed as
+   `pending_human_approval` for triage rather than auto-published, whatever
+   the actual payload was.
 
 5. **Regression & Validation Harness.** The system of record: a versioned,
    queryable exploit database, auto-run on Orchestrator trigger, that detects
