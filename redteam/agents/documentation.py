@@ -34,6 +34,18 @@ not returned via ``all_filed()``/``get_filed()``) until a human calls
 ``approved_by`` and files it. Non-critical reports (``requires_human_gate=False``) are filed
 immediately -- "nothing critical self-publishes," not "nothing publishes."
 
+``file_report(..., force_human_gate=True)`` (issue #55) reuses this exact
+gate for a second, orthogonal reason: a category whose ``detect()`` predicate
+is not reliably machine-decidable (see ``evals.cases.dos_input_bound``'s
+structural blind spot) can force ``requires_human_gate=True`` on its own
+regardless of severity, so ``redteam.campaign.run_campaign`` routes every
+confirmed ``denial_of_service`` outcome through the same pending-approval
+path a critical finding uses, without inflating its ``severity`` (the schema's
+``if/then`` is one-directional -- ``requires_human_gate: true`` at a
+non-critical severity is valid, it just never fires the other way). The
+caller (``run_campaign``) decides which categories set this; this module
+only provides the mechanism.
+
 ## Data-quality pre-write
 
 Every report -- whether about to be auto-filed or held pending -- is
@@ -223,11 +235,19 @@ def build_vuln_report(
     report_id: str | None = None,
     filed_at: str | None = None,
     fix_validation_status: str = "not_validated",
+    force_human_gate: bool = False,
     narrator: Narrator | None = None,
 ) -> dict[str, Any]:
     """Pure function: exploit_record -> vuln_report dict. No I/O, no model
     call, no validation against the contract (callers that need the
     pre-write gate should go through ``DocumentationAgent.file_report``).
+
+    ``force_human_gate`` (issue #55) ORs into the severity-derived gate: pass
+    ``True`` when the caller has decided, independent of severity, that this
+    finding must not self-publish (e.g. a category whose detector cannot
+    reliably distinguish a real finding from a false positive). It never
+    lowers the gate -- a critical-severity report is always gated regardless
+    of this argument.
     """
     exploit_id = _require(exploit_record, "exploit_id")
     category = _require(exploit_record, "category")
@@ -244,7 +264,7 @@ def build_vuln_report(
         "expected": _require(repro, "expected"),
         "remediation": REMEDIATION_BY_CATEGORY.get(category, _DEFAULT_REMEDIATION),
         "fix_validation_status": fix_validation_status,
-        "requires_human_gate": severity == "critical",
+        "requires_human_gate": severity == "critical" or force_human_gate,
         "filed_at": filed_at or now_iso(),
     }
 
@@ -305,12 +325,13 @@ class DocumentationAgent:
         report_id: str | None = None,
         filed_at: str | None = None,
         fix_validation_status: str = "not_validated",
+        force_human_gate: bool = False,
         narrator: Narrator | None = None,
     ) -> dict[str, Any]:
         """Build, validate, and either auto-file (non-critical) or hold for
-        human approval (critical) a report for ``exploit_record``. Raises
-        ``DocumentationAgentError`` if the report is schema-invalid or a
-        report for this ``exploit_id`` already exists.
+        human approval (critical, or ``force_human_gate=True``) a report for
+        ``exploit_record``. Raises ``DocumentationAgentError`` if the report
+        is schema-invalid or a report for this ``exploit_id`` already exists.
         """
         exploit_id = exploit_record["exploit_id"]
         self._reject_if_duplicate(exploit_id)
@@ -320,6 +341,7 @@ class DocumentationAgent:
             report_id=report_id,
             filed_at=filed_at,
             fix_validation_status=fix_validation_status,
+            force_human_gate=force_human_gate,
             narrator=narrator,
         )
         self._validate(report)
