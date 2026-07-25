@@ -460,10 +460,12 @@
   covers every single-line file:line citation this document and
   `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` make, including the
   untraced LLM-prompt/conversation-store/regex-scan paths above, not
-  only the 11 retrieval-hop links in the traced call chain (23 total
-  entries in `TRACE_CITATIONS`, up from 21: this pass added
-  `retrieval.py:92` and `chat.py:1483`, the two citations that were
-  previously correct but unpinned).
+  only the 11 retrieval-hop links in the traced call chain (23 entries
+  in `TRACE_CITATIONS` at the time this TRI-013 resolution landed, up
+  from 21: this pass added `retrieval.py:92` and `chat.py:1483`, the two
+  citations that were previously correct but unpinned; `TRACE_CITATIONS`
+  has since grown further — 40 entries as of issue #54's resolution and
+  its follow-up cold review — see `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`).
   Kept as its own line item (not merged into TRI-010) because — unlike
   TRI-010's guards, which were dismissed on inspection alone — this one
   required an actual multi-hop trace to resolve, which is now on record.
@@ -538,8 +540,9 @@
   `denial_of_service` → Medium per `SEVERITY_BY_CATEGORY`,
   `requires_human_gate: true` per issue #55's unconditional
   `FORCE_HUMAN_GATE_CATEGORIES` for this category) — **left
-  `pending_human_approval`, not self-approved.** Machine-checked (10 new
-  citations, 34 total in `TRACE_CITATIONS`) via
+  `pending_human_approval`, not self-approved.** Machine-checked (11 new
+  citations for this issue, 40 total in `TRACE_CITATIONS` after a
+  cold-review pass added 6 more) via
   `evals/analysis/dos_input_bound_resolution.py::resolve_issue_54` and its
   citation-verification test (`tests/test_dos_input_bound_resolution.py`).
 

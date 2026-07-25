@@ -24,8 +24,13 @@
   asserted against the pinned target by
   `tests/test_dos_input_bound_resolution.py::TestTraceCitationsAgainstPinnedTarget`
   (parametrized over `evals/analysis/dos_input_bound_resolution.py`'s
-  `TRACE_CITATIONS`, 34 entries total after this pass's additions) — it
-  skips cleanly when the sibling checkout is absent (CI).
+  `TRACE_CITATIONS`, 40 entries total: 23 pre-existing + 11 from this
+  issue's pass + 6 from a follow-up cold-review pass that closed a gap
+  where six citations this document itself makes — the uvicorn `CMD`,
+  `_DEFAULT_MAX_TURNS`'s use site, the introspection-cache TTL, and three
+  `ConversationStore` class-span points — were hand-checked but absent
+  from the machine-checked set) — it skips cleanly when the sibling
+  checkout is absent (CI).
 
 ## Question 1: is there ANY length bound on `ChatRequest.message` anywhere in the stack?
 

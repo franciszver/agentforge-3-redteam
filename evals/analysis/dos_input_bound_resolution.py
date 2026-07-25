@@ -309,6 +309,43 @@ TRACE_CITATIONS: tuple[tuple[str, int, str], ...] = (
         1022,
         "_SWITCH_TO_NAME_RE = re.compile(",
     ),
+    # -- second-pass additions (cold review of this PR): six more file:line
+    # citations the narrative docs make (Question 1's Dockerfile/uvicorn
+    # point, Path 1's max_turns constant, Path 2's TTL-cache aside, and the
+    # ConversationStore class-span endpoints) that were hand-checked but
+    # left out of this machine-checked set -- closing the hole rather than
+    # just rewording the claim, since this is the second PR running where
+    # the gap lived in the unchecked set.
+    (
+        "services/copilot-agent/Dockerfile",
+        31,
+        'CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]',
+    ),
+    (
+        "services/copilot-agent/app/planner.py",
+        541,
+        "max_turns: int = _DEFAULT_MAX_TURNS,",
+    ),
+    (
+        "services/copilot-agent/app/config.py",
+        133,
+        "copilot_introspection_cache_ttl_seconds: float = 60.0",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        570,
+        "class ConversationStore:",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        574,
+        "with the same shape (get / create / append) a DB-backed store would have.",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        594,
+        "_default_store = ConversationStore()",
+    ),
 )
 
 # ``guard_reachable_on_deployed_config`` (below) is NOT a bare hardcoded
