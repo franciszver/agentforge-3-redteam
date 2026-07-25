@@ -1,5 +1,7 @@
 # AgentForge Phase 3 — Adversarial Security & Red-Team Platform
 
+[![CI](https://github.com/franciszver/agentforge-3-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/franciszver/agentforge-3-redteam/actions/workflows/ci.yml)
+
 > **Status: Bootstrap (P3.0) and Stage 1 target drive (P3.1) are done.** A
 > fresh, independent repo — not a duplicate or fork. Its attack target is the
 > Phase 2 co-pilot
@@ -8,6 +10,13 @@
 > Tailscale exposure is deferred (see issue #3). The live plan is
 > **[GitHub Project #4, "AgentForge Red-Team Platform"](https://github.com/users/franciszver/projects/4)** —
 > planning docs below are frozen at import.
+
+## Demo
+
+![Attack to judge to regression loop](docs/assets/demo.gif)
+
+These frames are real runs of the deterministic test suite — no live model or
+target stack needed.
 
 ## What Phase 3 builds
 
