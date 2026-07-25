@@ -43,6 +43,7 @@
 | TRI-011 | False Positive | "Weak citation grounding enables spoofed evidence" (pixel-bbox) | FALSE POSITIVE — documented UX limitation, not an injection/verification vuln |
 | TRI-012 | False Positive | "Hardcoded localhost URL in dev config" | FALSE POSITIVE — local-appliance-only by design, not internet-reachable |
 | TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths untraced — see #54 |
+| TRI-014 | Medium | Unbounded `ConversationStore` growth (issue #54) | confirmed-real (structural, code-verified) / fix-recommended — no length bound on `ChatRequest.message` anywhere in the stack, and `ConversationStore` never evicts; filed `EXP-0004`/`VULN-0004`, `pending_human_approval` |
 
 ---
 
@@ -488,15 +489,69 @@
   `AttackCase.known_false_positive_ref` field and its `ActionLog`-only
   annotation entirely, since the gate it partially backed is superseded.
 
+### TRI-014 — Unbounded `ConversationStore` growth (issue #54) — RESOLVED
+
+- **Scanner claim:** "The three paths TRI-013/issue #25 left untraced —
+  the LLM prompt, the process-global conversation store, and unbounded
+  regex scans reachable from `/chat` — may or may not be a real
+  resource-exhaustion risk; unknown until traced."
+- **Severity as scanned:** Medium (candidate, untraced denial-of-service
+  hypothesis).
+- **Resolution (post white-box trace + one live draw):** see
+  `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` for the full three-path trace.
+  Summary: `ChatRequest.message` (`chat.py:137`) has no length bound
+  anywhere in the stack (no `max_length` in the Pydantic schema, no body-
+  size limit in FastAPI/Starlette/uvicorn, no reverse proxy in front of
+  `agent`, and the retrieval-hop `MAX_QUERY_CHARS` guard TRI-013 already
+  resolved is narrower and config-gated). Of the three paths: (1) the LLM
+  prompt (`planner.py:636`, re-sent up to `_DEFAULT_MAX_TURNS=6` turns) is
+  unbounded in application code but capped **operationally** (not by any
+  app-level defense) by the deployed `llama-server`'s fixed, preallocated
+  `--ctx-size 16384` (`docker-compose.copilot.yml:127`) — a config fact
+  that would change with no app code change if the engine or its context
+  size were swapped; (2) the conversation store (`chat.py:570-594`) has
+  **no bound of any kind** — exactly three methods (get/create/
+  append_turn), no eviction/TTL/cap on conversation count or per-turn size,
+  confirmed by the class's own `TODO(P4.2)` placeholder docstring; (3) the
+  regex scans (`detect_foreign_patient_reference`, `apply_subject_check`)
+  are unbounded-input but linear-time (bounded quantifiers only, no
+  catastrophic-backtracking risk) — a real but modest cost amplifier, not
+  a distinct DoS primitive. One live draw (single-draw honesty,
+  `evals/recordings/dos-unbounded-chat-message-length/`) sent a
+  ~13,900-char message (7x `MAX_QUERY_CHARS`) and got a normal 200+answer
+  with no rejection at any layer, confirming the code-level trace
+  empirically for this payload size.
+- **Disposition: confirmed-real (structural, code-verified) /
+  fix-recommended, Medium.** The conversation-store's unbounded growth is
+  the confirmed basis for this disposition — deductively certain from
+  reading the class's complete method surface, not merely hypothesized;
+  not a probabilistic risk pending more traffic, a guaranteed one given
+  enough of it. The LLM-prompt path is unbounded in code but only
+  demonstrated to be operationally (not app-level) capped in this specific
+  deployment — not claimed as a demonstrated GPU-exhaustion vector, since
+  the actual context-overflow behavior at the ceiling was not measured
+  live (judged unnecessary: the code-level "no app bound exists" fact is
+  already dispositive, and probing the exact overflow point would not
+  change the verdict). The regex-scan path is explicitly **not** claimed
+  as independently exploitable. Filed as `EXP-0004`/`VULN-0004`
+  (`docs/vuln_reports/VULN-0004.pending-human-approval.json`, category
+  `denial_of_service` → Medium per `SEVERITY_BY_CATEGORY`,
+  `requires_human_gate: true` per issue #55's unconditional
+  `FORCE_HUMAN_GATE_CATEGORIES` for this category) — **left
+  `pending_human_approval`, not self-approved.** Machine-checked (10 new
+  citations, 34 total in `TRACE_CITATIONS`) via
+  `evals/analysis/dos_input_bound_resolution.py::resolve_issue_54` and its
+  citation-verification test (`tests/test_dos_input_bound_resolution.py`).
+
 ---
 
 ## Acceptance check (self-verified per process rules)
 
-- **Finding count:** 13 findings (TRI-001 through TRI-013) — exceeds the
+- **Finding count:** 14 findings (TRI-001 through TRI-014) — exceeds the
   `>=10` requirement.
 - **All four dispositions present:** Critical/confirmed-real ×3
-  (TRI-001–003), High ×3 (TRI-004–006), Medium ×3 (TRI-007–009), False
-  Positive ×4 (TRI-010–013) — all four dispositions (confirmed-real,
+  (TRI-001–003), High ×3 (TRI-004–006), Medium ×4 (TRI-007–009, TRI-014),
+  False Positive ×4 (TRI-010–013) — all four dispositions (confirmed-real,
   fix-recommended, accept-risk, FALSE-POSITIVE) are represented across the
   set, each with a stated rationale.
 - **Every finding has an explicit disposition + rationale:** yes, in each
@@ -515,6 +570,10 @@
   `MAX_QUERY_CHARS` hypothesis, once the white-box trace issue #25 asked
   for was actually done — see `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`.
   The LLM-prompt/conversation-store/regex paths that trace also surfaced
-  are untraced and open at issue #54, not folded into this disposition.
-  Updated here rather than left stale, since this triage lab is meant to
-  reflect current disposition confidence, not a frozen snapshot.
+  are now resolved separately at TRI-014 (issue #54), not folded into
+  TRI-013's own disposition. TRI-014 itself is kept at Medium (matching
+  `denial_of_service`'s severity table entry, not inflated to Critical/High
+  on the strength of "unbounded" alone) and its own vuln report is left
+  `pending_human_approval`, not self-approved. Updated here rather than
+  left stale, since this triage lab is meant to reflect current disposition
+  confidence, not a frozen snapshot.

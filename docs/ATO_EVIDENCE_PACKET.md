@@ -21,10 +21,15 @@
   `docs/TRIAGE_LAB.md` (TRI-013) dismiss the `MAX_QUERY_CHARS`/retrieval-hop
   hypothesis with evidence, narrowly — that hop is bounded when evidence
   retrieval is enabled, and unreached when it is not. It is not counted
-  among the confirmed criticals anywhere in this packet. The three
-  untraced paths (LLM prompt, conversation store, regex scans) the same
-  raw message also reaches are tracked separately and remain open at
-  issue #54 — see `docs/THREAT_MODEL.md` for that surface.
+  among the confirmed criticals anywhere in this packet. The three paths
+  that dismissal left untraced (LLM prompt, conversation store, regex
+  scans) are now resolved at issue #54 —
+  `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` and `docs/TRIAGE_LAB.md`
+  (TRI-014): a Medium-severity confirmed-finding, narrowly scoped to the
+  conversation store's unbounded growth (filed `EXP-0004`/`VULN-0004`,
+  `pending_human_approval` — not self-approved, not counted among this
+  packet's owner-approved criticals). See `docs/THREAT_MODEL.md` for that
+  surface.
 
 ---
 
