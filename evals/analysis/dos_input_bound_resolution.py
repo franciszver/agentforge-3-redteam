@@ -160,6 +160,68 @@ TRACE_CITATIONS: tuple[tuple[str, int, str], ...] = (
         73,
         "MAX_QUERY_CHARS = 2000",
     ),
+    # The following entries extend coverage beyond the retrieval-hop trace
+    # above to every OTHER file:line citation the narrative docs
+    # (`docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`, `docs/TRIAGE_LAB.md`)
+    # make about the untraced paths (issue #54) and the guards this
+    # resolution references (feedback.py, planner.py) -- so a citation
+    # error in that unchecked prose (as happened once: chat.py:1358 cited
+    # in place of chat.py:1357) is caught by CI, not by manual re-reading.
+    (
+        "services/copilot-agent/app/chat.py",
+        836,
+        "result = supervisor.handle(RetrieveSubTask(query=query, k=_EVIDENCE_RETRIEVAL_TOP_K))",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        1165,
+        "cross_patient_reference_detected = detect_foreign_patient_reference(",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        1225,
+        "for event in run_streaming(message, guideline_excerpts, **planner_kwargs):",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        1256,
+        "result = apply_subject_check(result, question=message, patient_id=conversation.patient_id)",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        1351,
+        "store.append_turn(",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        1357,
+        "question=message,",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        578,
+        "self._conversations: dict[str, Conversation] = {}",
+    ),
+    (
+        "services/copilot-agent/app/feedback.py",
+        75,
+        "comment: str | None = Field(default=None, max_length=MAX_COMMENT_LENGTH)",
+    ),
+    (
+        "services/copilot-agent/app/planner.py",
+        98,
+        "_DEFAULT_MAX_TURNS = 6",
+    ),
+    (
+        "services/copilot-agent/app/planner.py",
+        636,
+        '{"role": "user", "content": question},',
+    ),
+    (
+        "services/copilot-agent/app/supervisor.py",
+        118,
+        "query: str",
+    ),
 )
 
 # ``guard_reachable_on_deployed_config`` (below) is NOT a bare hardcoded

@@ -174,14 +174,14 @@ also demonstrably reaches at least three other paths that this PR does
    (`services/copilot-agent/app/planner.py:98`) turns of the planner loop.
 2. **The conversation store.** `services/copilot-agent/app/chat.py:1351`
    calls `store.append_turn(...)` with `question=message`
-   (`services/copilot-agent/app/chat.py:1358`); `ConversationStore`
-   (`services/copilot-agent/app/chat.py:590-594`) is a process-global
+   (`services/copilot-agent/app/chat.py:1357`); `ConversationStore`
+   (`services/copilot-agent/app/chat.py:570-594`) is a process-global
    in-memory `dict` with no eviction. (Note: an earlier draft of this
    citation, and issue #54's own body, cite `chat.py:1483` for this call
    site — that line is actually the `request.message` argument passed
    into `_stream_chat(...)`, not the `append_turn` call. The correct
    citation, verified directly against the pinned tag, is `chat.py:1351`
-   for the call and `chat.py:1358` for the `question=message` keyword
+   for the call and `chat.py:1357` for the `question=message` keyword
    argument.)
 3. **Unbounded regex scans.** `services/copilot-agent/app/chat.py:1165-1166`
    calls `detect_foreign_patient_reference(message, ...)`, and
