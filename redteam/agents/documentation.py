@@ -119,6 +119,23 @@ SEVERITY_BY_CATEGORY: dict[str, str] = {
 }
 _DEFAULT_SEVERITY = "medium"
 
+# Categories whose confirmed findings are ALWAYS routed through the
+# human-approval gate regardless of ``SEVERITY_BY_CATEGORY`` (issue #55).
+# ``denial_of_service`` is here because ``evals.cases.dos_input_bound.detect``
+# is structurally unable to distinguish "guard absent" from "guard fired
+# then fail-soft-swallowed" for a 200-with-an-`answer` -- see that module's
+# "STRUCTURAL BLIND SPOT" comment. This is deliberately a set, not a single
+# hardcoded category name, so a future case with the same
+# not-reliably-machine-decidable shape can opt in without touching a caller.
+#
+# This is a property of the CATEGORY, not of any one caller: every place
+# that builds a ``VulnReport`` from an ``exploit_record`` -- the live
+# ``redteam.campaign.run_campaign`` loop and the offline
+# ``tools/build_vuln_reports.py`` evidence-artifact generator alike -- must
+# consult this set and pass ``force_human_gate=category in
+# FORCE_HUMAN_GATE_CATEGORIES`` to ``DocumentationAgent.file_report``.
+FORCE_HUMAN_GATE_CATEGORIES = frozenset({"denial_of_service"})
+
 CLINICAL_IMPACT_BY_CATEGORY: dict[str, str] = {
     "identity_authz": (
         "An unauthenticated or improperly authenticated caller can retrieve "

@@ -16,7 +16,14 @@ For each of the three findings below, this script:
      draw, stores it via ``redteam.harness.db.ExploitDB`` (pre-write schema
      + uniqueness gate), and generates its ``vuln_report`` via
      ``redteam.agents.documentation.DocumentationAgent`` (deterministic
-     core, no narrator).
+     core, no narrator). Filing goes through ``_file_finding`` below, which
+     forces the human-approval gate for any category in
+     ``redteam.agents.documentation.FORCE_HUMAN_GATE_CATEGORIES`` (issue
+     #55) -- the gate is a property of the category, not of
+     ``redteam.campaign.run_campaign`` specifically, so this offline
+     evidence-artifact generator must honor it too, or a confirmed
+     ``denial_of_service`` finding added here would self-publish exactly
+     what #55 says must not self-publish.
   4. Writes every report's JSON verbatim to ``docs/vuln_reports/`` --
      including reports still ``pending_human_approval`` (this script never
      calls ``DocumentationAgent.approve`` itself; a critical-severity
@@ -43,7 +50,10 @@ from evals.cases.data_exfil_verification_bypass import CASE as DATA_EXFIL_CASE  
 from evals.cases.identity_authz import CASE as AUTHZ_CASE  # noqa: E402
 from evals.runner import ParsedResponse  # noqa: E402
 from evals.schema import AttackCase  # noqa: E402
-from redteam.agents.documentation import DocumentationAgent  # noqa: E402
+from redteam.agents.documentation import (  # noqa: E402
+    FORCE_HUMAN_GATE_CATEGORIES,
+    DocumentationAgent,
+)
 from redteam.agents.judge import JudgeAgent  # noqa: E402
 from redteam.harness.db import ExploitDB  # noqa: E402
 
@@ -101,6 +111,20 @@ def score_and_confirm(case: AttackCase, judge: JudgeAgent) -> tuple[dict[str, An
     return verdict, path, draw_index, confirmed, total
 
 
+def _file_finding(documentation: DocumentationAgent, record: dict[str, Any]) -> dict[str, Any]:
+    """File one exploit record through the same category-level human-approval
+    gate ``redteam.campaign.run_campaign`` uses (issue #55): force it open,
+    independent of severity, for every category in
+    ``FORCE_HUMAN_GATE_CATEGORIES``. Without this, a category like
+    ``denial_of_service`` -- not reliably machine-decidable, per
+    ``evals.cases.dos_input_bound``'s "STRUCTURAL BLIND SPOT" comment --
+    would self-publish here even though the live campaign loop never lets it.
+    """
+    return documentation.file_report(
+        record, force_human_gate=record["category"] in FORCE_HUMAN_GATE_CATEGORIES
+    )
+
+
 def main() -> int:
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     db = ExploitDB(":memory:")
@@ -132,7 +156,7 @@ def main() -> int:
         }
         db.add_record(record)
 
-        report = documentation.file_report(record)
+        report = _file_finding(documentation, record)
         status = report["status"]
         # Persist the CONTRACT-VALID report body only -- vuln_report.schema.json
         # is additionalProperties:false and has no "status" field (status is

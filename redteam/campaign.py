@@ -85,7 +85,8 @@ this loop is ``DocumentationAgent``'s human-approval gate: a
 ``pending_human_approval`` (never auto-filed) and the loop keeps going --
 ``run_campaign`` never calls ``DocumentationAgent.approve`` itself. The same
 gate is also forced open, independent of severity, for every category in
-``_FORCE_HUMAN_GATE_CATEGORIES`` below (issue #55: ``denial_of_service`` is
+``redteam.agents.documentation.FORCE_HUMAN_GATE_CATEGORIES`` (issue #55:
+``denial_of_service`` is
 not reliably machine-decidable -- see ``evals.cases.dos_input_bound``'s
 "STRUCTURAL BLIND SPOT" comment -- so every confirmed finding in it is
 surfaced for human triage rather than auto-published, category-wide, not
@@ -101,7 +102,7 @@ from typing import Any, Callable, Mapping, Sequence
 from evals.runner import DEFAULT_CONTAINER, DEFAULT_TIMEOUT_S, ParsedResponse, drive_chat, record_run
 from evals.schema import AttackCase
 
-from redteam.agents.documentation import DocumentationAgent
+from redteam.agents.documentation import FORCE_HUMAN_GATE_CATEGORIES, DocumentationAgent
 from redteam.agents.judge import JudgeAgent, JudgeDriftSuspectedError, JudgeTimeoutError
 from redteam.agents.orchestrator import BudgetExceededError, NoFindingsInWindowError, Orchestrator
 from redteam.agents.red_team import RedTeamAgent, RedTeamAgentError
@@ -116,16 +117,6 @@ from redteam.observability.snapshot import emit_snapshot
 DEFAULT_BEARER_TOKEN = "dev-smoke-test-token"
 
 DEFAULT_MAX_ITERATIONS = 10
-
-# Categories whose confirmed findings are ALWAYS routed through the
-# human-approval gate regardless of ``SEVERITY_BY_CATEGORY`` (issue #55).
-# ``denial_of_service`` is here because ``evals.cases.dos_input_bound.detect``
-# is structurally unable to distinguish "guard absent" from "guard fired
-# then fail-soft-swallowed" for a 200-with-an-`answer` -- see that module's
-# "STRUCTURAL BLIND SPOT" comment. This is deliberately a set, not a single
-# hardcoded category name, so a future case with the same
-# not-reliably-machine-decidable shape can opt in without touching the loop.
-_FORCE_HUMAN_GATE_CATEGORIES = frozenset({"denial_of_service"})
 
 TargetClient = Callable[[Mapping[str, Any]], ParsedResponse]
 SnapshotFn = Callable[[], dict[str, Any]]
@@ -443,7 +434,7 @@ def run_campaign(
             # narrowed to one exact probe message; no other category's
             # gating is affected.
             report = documentation.file_report(
-                record, force_human_gate=attempt["category"] in _FORCE_HUMAN_GATE_CATEGORIES
+                record, force_human_gate=attempt["category"] in FORCE_HUMAN_GATE_CATEGORIES
             )
             if report["status"] == "pending_human_approval":
                 result.pending_reports.append(report)
