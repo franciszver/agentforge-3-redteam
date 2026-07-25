@@ -237,7 +237,10 @@
   >2000-char `/chat` message deterministically drives
   `_validate_query_length` to raise `RetrievalError`, which this same
   fail-soft `except Exception` swallows, forcing `retrieved_chunks = []`
-  with no fault injection and no privileges required. See TRI-013 below
+  with no fault injection and no privileges required, **when evidence
+  retrieval is enabled (dev-easy stack)** — on a default deployment
+  `copilot_evidence_retrieval_enabled` is `False` (`config.py:200`) and
+  `_validate_query_length` is never reached at all. See TRI-013 below
   and `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` for the full trace. This
   is a new datum, not a disposition change: it shows *a* concrete way to
   induce the empty-list path, but does not by itself show that the
@@ -428,7 +431,7 @@
   defect. This resolution does **not** claim the `/chat` endpoint is
   bounded in general — the same raw message also reaches the LLM prompt
   (`planner.py:636`, resent up to `_DEFAULT_MAX_TURNS = 6` turns), the
-  unbounded, never-evicted `ConversationStore` (`chat.py:590-594`), and
+  unbounded, never-evicted `ConversationStore` (`chat.py:570-594`), and
   unbounded regex scans (`detect_foreign_patient_reference`,
   `apply_subject_check`), none of which this trace examined — see
   `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`'s "Out of scope for #25,
@@ -436,10 +439,26 @@
   against the pinned target when it is present, skipped otherwise) via
   `evals/analysis/dos_input_bound_resolution.py::resolve_issue_25` and
   its citation-verification test
-  (`tests/test_dos_input_bound_resolution.py`).
+  (`tests/test_dos_input_bound_resolution.py`) — the machine-checked set
+  covers every file:line citation this document and
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` make, including the
+  untraced LLM-prompt/conversation-store/regex-scan paths above, not
+  only the 10 retrieval-hop links in the traced call chain.
   Kept as its own line item (not merged into TRI-010) because — unlike
   TRI-010's guards, which were dismissed on inspection alone — this one
   required an actual multi-hop trace to resolve, which is now on record.
+  **Known limitation (tracked at issue #55, open):** the code fix landed
+  in this PR only suppresses auto-filing a `denial_of_service` report for
+  the exact documented probe shape; `Orchestrator._pick_next_case` never
+  emits a `case_id` in the live campaign loop, so that suppression branch
+  is unreachable live — a live campaign can still auto-file a
+  `denial_of_service` report for a novel overlong-query payload, because
+  `dos_input_bound.detect` cannot distinguish "guard absent" from "guard
+  fired then swallowed" from a 200-with-an-`answer` alone. Nothing in
+  this document should be read as claiming the fix protects the live
+  loop against that false positive. The known-FP annotation this PR adds
+  also lives only in the `ActionLog`, not on the `ExploitDB` record
+  itself (`exploit_record.schema.json` is `additionalProperties: false`).
 
 ---
 
