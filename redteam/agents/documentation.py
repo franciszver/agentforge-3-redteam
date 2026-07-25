@@ -34,6 +34,18 @@ not returned via ``all_filed()``/``get_filed()``) until a human calls
 ``approved_by`` and files it. Non-critical reports (``requires_human_gate=False``) are filed
 immediately -- "nothing critical self-publishes," not "nothing publishes."
 
+``file_report(..., force_human_gate=True)`` (issue #55) reuses this exact
+gate for a second, orthogonal reason: a category whose ``detect()`` predicate
+is not reliably machine-decidable (see ``evals.cases.dos_input_bound``'s
+structural blind spot) can force ``requires_human_gate=True`` on its own
+regardless of severity, so ``redteam.campaign.run_campaign`` routes every
+confirmed ``denial_of_service`` outcome through the same pending-approval
+path a critical finding uses, without inflating its ``severity`` (the schema's
+``if/then`` is one-directional -- ``requires_human_gate: true`` at a
+non-critical severity is valid, it just never fires the other way). The
+caller (``run_campaign``) decides which categories set this; this module
+only provides the mechanism.
+
 ## Data-quality pre-write
 
 Every report -- whether about to be auto-filed or held pending -- is
@@ -106,6 +118,23 @@ SEVERITY_BY_CATEGORY: dict[str, str] = {
     "denial_of_service": "medium",
 }
 _DEFAULT_SEVERITY = "medium"
+
+# Categories whose confirmed findings are ALWAYS routed through the
+# human-approval gate regardless of ``SEVERITY_BY_CATEGORY`` (issue #55).
+# ``denial_of_service`` is here because ``evals.cases.dos_input_bound.detect``
+# is structurally unable to distinguish "guard absent" from "guard fired
+# then fail-soft-swallowed" for a 200-with-an-`answer` -- see that module's
+# "STRUCTURAL BLIND SPOT" comment. This is deliberately a set, not a single
+# hardcoded category name, so a future case with the same
+# not-reliably-machine-decidable shape can opt in without touching a caller.
+#
+# This is a property of the CATEGORY, not of any one caller: every place
+# that builds a ``VulnReport`` from an ``exploit_record`` -- the live
+# ``redteam.campaign.run_campaign`` loop and the offline
+# ``tools/build_vuln_reports.py`` evidence-artifact generator alike -- must
+# consult this set and pass ``force_human_gate=category in
+# FORCE_HUMAN_GATE_CATEGORIES`` to ``DocumentationAgent.file_report``.
+FORCE_HUMAN_GATE_CATEGORIES = frozenset({"denial_of_service"})
 
 CLINICAL_IMPACT_BY_CATEGORY: dict[str, str] = {
     "identity_authz": (
@@ -223,11 +252,19 @@ def build_vuln_report(
     report_id: str | None = None,
     filed_at: str | None = None,
     fix_validation_status: str = "not_validated",
+    force_human_gate: bool = False,
     narrator: Narrator | None = None,
 ) -> dict[str, Any]:
     """Pure function: exploit_record -> vuln_report dict. No I/O, no model
     call, no validation against the contract (callers that need the
     pre-write gate should go through ``DocumentationAgent.file_report``).
+
+    ``force_human_gate`` (issue #55) ORs into the severity-derived gate: pass
+    ``True`` when the caller has decided, independent of severity, that this
+    finding must not self-publish (e.g. a category whose detector cannot
+    reliably distinguish a real finding from a false positive). It never
+    lowers the gate -- a critical-severity report is always gated regardless
+    of this argument.
     """
     exploit_id = _require(exploit_record, "exploit_id")
     category = _require(exploit_record, "category")
@@ -244,7 +281,7 @@ def build_vuln_report(
         "expected": _require(repro, "expected"),
         "remediation": REMEDIATION_BY_CATEGORY.get(category, _DEFAULT_REMEDIATION),
         "fix_validation_status": fix_validation_status,
-        "requires_human_gate": severity == "critical",
+        "requires_human_gate": severity == "critical" or force_human_gate,
         "filed_at": filed_at or now_iso(),
     }
 
@@ -258,8 +295,9 @@ def build_vuln_report(
 
 
 class DocumentationAgent:
-    """Stateful wrapper: pre-write schema validation, the critical-severity
-    human-approval gate, and duplicate-report protection around
+    """Stateful wrapper: pre-write schema validation, the human-approval
+    gate (critical-severity, or ``force_human_gate=True`` regardless of
+    severity -- issue #55), and duplicate-report protection around
     ``build_vuln_report``.
     """
 
@@ -305,12 +343,13 @@ class DocumentationAgent:
         report_id: str | None = None,
         filed_at: str | None = None,
         fix_validation_status: str = "not_validated",
+        force_human_gate: bool = False,
         narrator: Narrator | None = None,
     ) -> dict[str, Any]:
         """Build, validate, and either auto-file (non-critical) or hold for
-        human approval (critical) a report for ``exploit_record``. Raises
-        ``DocumentationAgentError`` if the report is schema-invalid or a
-        report for this ``exploit_id`` already exists.
+        human approval (critical, or ``force_human_gate=True``) a report for
+        ``exploit_record``. Raises ``DocumentationAgentError`` if the report
+        is schema-invalid or a report for this ``exploit_id`` already exists.
         """
         exploit_id = exploit_record["exploit_id"]
         self._reject_if_duplicate(exploit_id)
@@ -320,6 +359,7 @@ class DocumentationAgent:
             report_id=report_id,
             filed_at=filed_at,
             fix_validation_status=fix_validation_status,
+            force_human_gate=force_human_gate,
             narrator=narrator,
         )
         self._validate(report)
@@ -339,9 +379,10 @@ class DocumentationAgent:
         approved_at: str | None = None,
         approved_by: str = "owner",
     ) -> dict[str, Any]:
-        """Human-approval gate: the only path a pending critical report can
-        take to becoming filed. Stamps both ``approved_at`` (defaults to
-        now) and ``approved_by`` (defaults to ``"owner"`` -- the human who
+        """Human-approval gate: the only path a pending report -- critical-
+        severity, or ``force_human_gate=True`` (e.g. ``denial_of_service``,
+        issue #55) -- can take to becoming filed. Stamps both ``approved_at``
+        (defaults to now) and ``approved_by`` (defaults to ``"owner"`` -- the human who
         sits at this gate per docs/ARCHITECTURE.md §6; pass an explicit
         value for any other approving identity). Raises
         ``DocumentationAgentError`` if there is no pending report for

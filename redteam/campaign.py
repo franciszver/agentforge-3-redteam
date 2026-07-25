@@ -73,16 +73,24 @@ until an existing case gives that category detection logic.
   loop stop (only a human calling ``JudgeAgent.reanchor()`` clears
   ``judge.halted`` per that module's docstring -- this loop keeps running,
   since it is autonomous end-to-end apart from Documentation's
-  critical-severity approval gate).
+  human-approval gate, forced for critical-severity findings and for the
+  whole ``denial_of_service`` category regardless of severity).
 
 ## The one human touchpoint
 
 Per docs/ARCHITECTURE.md §2/§6, the only human-in-the-loop step anywhere in
-this loop is ``DocumentationAgent``'s critical-severity report gate: a
+this loop is ``DocumentationAgent``'s human-approval gate: a
 ``success``/``regression`` verdict for a category whose
 ``SEVERITY_BY_CATEGORY`` is ``critical`` files its report as
 ``pending_human_approval`` (never auto-filed) and the loop keeps going --
-``run_campaign`` never calls ``DocumentationAgent.approve`` itself.
+``run_campaign`` never calls ``DocumentationAgent.approve`` itself. The same
+gate is also forced open, independent of severity, for every category in
+``redteam.agents.documentation.FORCE_HUMAN_GATE_CATEGORIES`` (issue #55:
+``denial_of_service`` is
+not reliably machine-decidable -- see ``evals.cases.dos_input_bound``'s
+"STRUCTURAL BLIND SPOT" comment -- so every confirmed finding in it is
+surfaced for human triage rather than auto-published, category-wide, not
+narrowed to a single documented probe message).
 """
 
 from __future__ import annotations
@@ -94,7 +102,7 @@ from typing import Any, Callable, Mapping, Sequence
 from evals.runner import DEFAULT_CONTAINER, DEFAULT_TIMEOUT_S, ParsedResponse, drive_chat, record_run
 from evals.schema import AttackCase
 
-from redteam.agents.documentation import DocumentationAgent
+from redteam.agents.documentation import FORCE_HUMAN_GATE_CATEGORIES, DocumentationAgent
 from redteam.agents.judge import JudgeAgent, JudgeDriftSuspectedError, JudgeTimeoutError
 from redteam.agents.orchestrator import BudgetExceededError, NoFindingsInWindowError, Orchestrator
 from redteam.agents.red_team import RedTeamAgent, RedTeamAgentError
@@ -210,8 +218,9 @@ def run_campaign(
     handling.
 
     No human input between iterations -- the only human touchpoint anywhere
-    in this call is that a critical-severity report lands in
-    ``documentation``'s pending-approval state rather than being filed.
+    in this call is that a critical-severity report, or any confirmed
+    ``denial_of_service`` report regardless of severity (issue #55), lands
+    in ``documentation``'s pending-approval state rather than being filed.
     """
     if max_iterations < 1:
         raise CampaignError(f"max_iterations must be >= 1, got {max_iterations!r}")
@@ -366,17 +375,15 @@ def run_campaign(
         # A confirmed ("success"/"regression") outcome is ALWAYS recorded --
         # ``record_run`` and ``db.add_record`` below run for every confirmed
         # outcome, full stop. A red-team platform must never destroy the
-        # only copy of a target's raw response just because the case it was
-        # scored against happens to carry a documented known-false-positive
-        # shape (see ``AttackCase.known_false_positive_ref``). What the
-        # known-false-positive annotation gates is narrower and comes
-        # AFTER the write: whether ``documentation.file_report`` runs for
-        # THIS attempt. The Judge's own scoring/drift-detection integrity
-        # stays untouched either way -- `verdict` above still reflects the
-        # case's honest, unmodified `detect` output, and this step never
-        # feeds back into `JudgeAgent.score`/`map_outcome`/`check_drift`
-        # (ARCHITECTURE.md §6's gold-probe drift baseline scores against
-        # `JudgeAgent.score` alone).
+        # only copy of a target's raw response. Whether
+        # ``documentation.file_report`` auto-files or gates for human
+        # approval is a SEPARATE, later decision (below) that never touches
+        # this write. The Judge's own scoring/drift-detection integrity stays
+        # untouched either way -- `verdict` above still reflects the case's
+        # honest, unmodified `detect` output, and this step never feeds back
+        # into `JudgeAgent.score`/`map_outcome`/`check_drift` (ARCHITECTURE.md
+        # §6's gold-probe drift baseline scores against `JudgeAgent.score`
+        # alone).
         outcome_confirmed = verdict["outcome"] in ("success", "regression")
         if outcome_confirmed:
             recording_path = record_run(
@@ -400,14 +407,6 @@ def run_campaign(
                 "minimal_repro": _minimal_repro(attempt, verdict),
                 "recording_ref": str(recording_path),
             }
-            # Note: ``contracts/v1/exploit_record.schema.json`` is
-            # ``additionalProperties: false`` (see ``redteam.harness.db``'s
-            # module docstring), so the known-false-positive annotation is
-            # NOT smuggled into this contract-validated dict -- it is
-            # carried on the ``known_false_positive_suppressed`` action-log
-            # entry below instead, which names this exact ``exploit_id``
-            # and is the durable, queryable record of "this confirmed
-            # exploit is the documented benign probe."
             db.add_record(record)
             result.exploit_ids.append(exploit_id)
             action_log.append(
@@ -418,61 +417,42 @@ def run_campaign(
                 details=record,
             )
 
-            # Narrow suppression: skip the REPORT only when this attempt is
-            # genuinely the documented, verified false-positive probe --
-            # not merely "some novel attempt in the same category as a
-            # case that has a known_false_positive_ref". The category_random
-            # selector generates a NOVEL message per draw (module docstring
-            # "Which category gets judged"), so a message match against the
-            # case's own documented probe (``case.message``) is what proves
-            # this is that exact, already-triaged scenario reproducing
-            # again, not a new payload that merely landed in the same
-            # category and happens to trip the same black-box detect()
-            # shape. A novel payload in ``denial_of_service`` (or any other
-            # category) always files normally.
-            is_documented_probe = (
-                case.known_false_positive_ref is not None
-                # ``.strip()`` on both sides: ``RedTeamAgent``'s
-                # category_random/mutation_of paths always strip the
-                # generated message (red_team.py), so a trailing/leading
-                # whitespace-only difference must not defeat the "this IS
-                # the documented probe" match.
-                and attempt["message"].strip() == case.message.strip()
+            # Category-level human-approval gate (issue #55): ``denial_of_service``
+            # is not reliably machine-decidable -- ``dos_input_bound.detect``
+            # structurally cannot distinguish "guard absent" from "guard
+            # fired then fail-soft-swallowed" for a 200-with-an-`answer`
+            # (see that module's "STRUCTURAL BLIND SPOT" comment). Rather
+            # than suppressing the report (unreachable in the live loop --
+            # ``Orchestrator._pick_next_case`` never emits ``case_id``, so a
+            # message-match predicate against one documented probe never
+            # fires outside a deliberate replay), every CONFIRMED outcome in
+            # this category is filed but forced through the same
+            # human-approval gate a critical-severity finding uses
+            # (``DocumentationAgent.file_report(..., force_human_gate=True)``)
+            # -- surfaced for triage, never silently dropped or auto-published.
+            # This applies category-wide (novel payloads included), not
+            # narrowed to one exact probe message; no other category's
+            # gating is affected.
+            report = documentation.file_report(
+                record, force_human_gate=attempt["category"] in FORCE_HUMAN_GATE_CATEGORIES
             )
-            if is_documented_probe:
+            if report["status"] == "pending_human_approval":
+                result.pending_reports.append(report)
                 action_log.append(
                     agent="documentation",
-                    event_type="known_false_positive_suppressed",
-                    case_id=verdict["case_id"],
-                    category=attempt["category"],
-                    details={
-                        "attempt_id": verdict["attempt_id"],
-                        "verdict_id": verdict["verdict_id"],
-                        "exploit_id": exploit_id,
-                        "outcome": verdict["outcome"],
-                        "selector": selector,
-                        "known_false_positive_ref": case.known_false_positive_ref,
-                    },
+                    event_type="vuln_report_pending_human_approval",
+                    category=record["category"],
+                    details=report,
                 )
             else:
-                report = documentation.file_report(record)
-                if report["status"] == "pending_human_approval":
-                    result.pending_reports.append(report)
-                    action_log.append(
-                        agent="documentation",
-                        event_type="vuln_report_pending_human_approval",
-                        category=record["category"],
-                        details=report,
-                    )
-                else:
-                    result.filed_reports.append(report)
-                    action_log.append(
-                        agent="documentation",
-                        event_type="vuln_report_filed",
-                        category=record["category"],
-                        details=report,
-                    )
-                all_vuln_reports.append(report)
+                result.filed_reports.append(report)
+                action_log.append(
+                    agent="documentation",
+                    event_type="vuln_report_filed",
+                    category=record["category"],
+                    details=report,
+                )
+            all_vuln_reports.append(report)
 
         # -- 6. Regression sweep (only on caller-named iterations) -----------
         if result.iterations_run in regression_sweep_at:

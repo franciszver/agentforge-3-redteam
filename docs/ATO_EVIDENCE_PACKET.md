@@ -88,7 +88,7 @@ flowchart TB
     J -- "confirmed exploit" --> RH
     RH -- "recorded transcript on every live draw" --> REC
     RH -- "confirmed exploit + repro" --> D
-    D -- "structured report" --> HG["Human approval gate<br/>(critical severity only)"]
+    D -- "structured report" --> HG["Human approval gate<br/>(critical severity + not-machine-decidable categories)"]
     HG -- "owner-approved" --> VR
 
     T -.->|"PHI boundary: target's own patient data<br/>NEVER leaves target's local process"| TargetBoundary

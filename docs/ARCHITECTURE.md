@@ -14,11 +14,13 @@
   made here. (#25 is since resolved — see TRI-013 in `docs/TRIAGE_LAB.md`
   and `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`: dismissed-with-evidence,
   narrowly, for the `MAX_QUERY_CHARS` retrieval-hop hypothesis only. That
-  resolution also surfaced a limitation in this PR's own fix, tracked open
-  at issue #55: `Orchestrator._pick_next_case` never emits `case_id` in the
-  live loop, so the exact-probe suppression branch it adds is unreachable
-  live — a live campaign can still auto-file a `denial_of_service` report
-  for a novel overlong-query payload.)
+  resolution surfaced a limitation in that PR's fix — `Orchestrator
+  ._pick_next_case` never emits `case_id` in the live loop, so a
+  message-match suppression branch was unreachable live — which issue #55
+  then closed: `denial_of_service` confirmations are no longer suppressed
+  by message match at all; every confirmed finding in that category is
+  routed through `DocumentationAgent`'s human-approval gate instead. See
+  §6 below.)
 
 ## 1. Prose summary (~500 words)
 
@@ -55,8 +57,9 @@ Judge-confirmed exploits reach the Documentation Agent, which turns them into
 structured vulnerability reports — ID, severity, clinical impact, minimal
 repro, observed-vs-expected, remediation, fix-validation status — reproducible
 by an engineer with zero platform context. Any report scored critical-severity
-stops at a human-approval gate before it is filed; nothing critical publishes
-itself.
+stops at a human-approval gate before it is filed — nothing critical publishes
+itself — and the same gate is also forced open, independent of severity, for
+the whole `denial_of_service` category (issue #55; see §3(4) and §6).
 
 The Regression Harness and Observability Layer are shared infrastructure, not
 agents: the harness is the system of record for "was this seen before, is it
@@ -105,7 +108,7 @@ flowchart LR
     OBS -- "coverage gaps, open high-sev, cost/rate state" --> O
     J -- "confirmed-exploit record" --> RH
     RH -- "confirmed exploit + repro" --> D
-    D -- "structured vuln report" --> HG["Human approval gate<br/>(critical severity only)"]
+    D -- "structured vuln report" --> HG["Human approval gate<br/>(critical severity + not-machine-decidable categories)"]
     HG -- "approved" --> Filed["Filed vuln report"]
 
     style ZoneA fill:#3b1f1f,stroke:#e05252,color:#f5e5e5
@@ -151,7 +154,13 @@ peek at another's context.
    observed-vs-expected, remediation, fix-validation status) that a fresh
    engineer can act on without platform context. A human-approval gate sits
    between this agent and filing any critical-severity report — nothing
-   critical self-publishes.
+   critical self-publishes. The same gate is also forced open, independent
+   of severity, for the whole `denial_of_service` category (issue #55):
+   `evals.cases.dos_input_bound.detect` cannot reliably distinguish a real
+   guard failure from a guard that fired and was fail-soft-swallowed, so
+   every confirmed `denial_of_service` finding is filed as
+   `pending_human_approval` for triage rather than auto-published, whatever
+   the actual payload was.
 
 5. **Regression & Validation Harness.** The system of record: a versioned,
    queryable exploit database, auto-run on Orchestrator trigger, that detects
@@ -246,9 +255,9 @@ supply-chain-adjacent and trust-boundary failures in someone else's system.
 | Role | What it does | Independently verified | Taken on trust | Residual risk |
 |---|---|---|---|---|
 | **Red Team Agent** | Generates and mutates adversarial probes against the target. | Every probe it sends and every raw target response is recorded (`evals/recordings/`) and independently re-readable by the Judge and by a human; the *fact* that a probe was sent and what the target returned is fully verifiable evidence, not the Red Team's self-report. | The Red Team's own internal reasoning for *why* it chose a given mutation is not verified — the platform does not require it to be, only its output. | A creative-but-off-target generator wastes Orchestrator budget on low-value probes without necessarily failing loudly; mitigated by Observability's coverage/cost tracking, which the Orchestrator reads to redirect. |
-| **Judge Agent** | Scores each target response success/fail/partial/regression. | Verdicts are checked against the case's own rule-based/example-anchored success criteria at write time, and against a gold-labeled probe set on the drift-detection cadence below. | The Judge's score on a genuinely novel, non-gold-set case is not independently re-verified in real time — that would require a second judge, which the architecture does not currently fund. | A drifting or manipulated Judge could under- or over-report vulnerabilities; §6 drift method below is the primary control, plus human review at the Documentation Agent's critical-severity gate as a second check on the highest-stakes verdicts. |
+| **Judge Agent** | Scores each target response success/fail/partial/regression. | Verdicts are checked against the case's own rule-based/example-anchored success criteria at write time, and against a gold-labeled probe set on the drift-detection cadence below. | The Judge's score on a genuinely novel, non-gold-set case is not independently re-verified in real time — that would require a second judge, which the architecture does not currently fund. | A drifting or manipulated Judge could under- or over-report vulnerabilities; §6 drift method below is the primary control, plus human review at the Documentation Agent's human-approval gate (critical-severity, or `denial_of_service` regardless of severity) as a second check on the highest-stakes verdicts. |
 | **Orchestrator Agent** | Directs the Red Team, decides category coverage, triggers regressions, manages budget. | Its decisions are logged in the per-agent action log (Observability), so every directive is traceable to the state (coverage/cost/regression data) that produced it. | The *quality* of its coverage-sufficiency heuristic is not independently validated beyond human spot-review of the action log — no second orchestrator cross-checks its decisions. | A miscalibrated "covered" threshold could stop attacking a category too early; caught by human review of Observability's coverage report before a category is signed off in a report. |
-| **Documentation Agent** | Converts Judge-confirmed exploits into structured vulnerability reports. | Every report is checked against the Regression Harness's confirmed-exploit record it was generated from (data-quality constraints validated pre-write: unique IDs, required fields, no duplicate attack-sequence entries) and reproduced by re-running the minimal repro. | Report prose (clinical-impact framing, remediation wording) is not independently re-derived — only the underlying facts (ID, repro, observed-vs-expected) are checked against the source record. | A well-formed but misleadingly framed report could over- or under-state impact; the human-approval gate on critical-severity filings is the control, and non-critical reports are reviewed at P3.13 packaging. |
+| **Documentation Agent** | Converts Judge-confirmed exploits into structured vulnerability reports. | Every report is checked against the Regression Harness's confirmed-exploit record it was generated from (data-quality constraints validated pre-write: unique IDs, required fields, no duplicate attack-sequence entries) and reproduced by re-running the minimal repro. | Report prose (clinical-impact framing, remediation wording) is not independently re-derived — only the underlying facts (ID, repro, observed-vs-expected) are checked against the source record. | A well-formed but misleadingly framed report could over- or under-state impact; the human-approval gate on critical-severity filings (and, regardless of severity, on the whole `denial_of_service` category — issue #55) is the control, and other non-gated reports are reviewed at P3.13 packaging. |
 
 **Judge drift-detection + correction method (concrete definition).** The
 Judge is periodically re-scored, not just trusted to hold steady: a **fixed,
