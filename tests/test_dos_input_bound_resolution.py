@@ -31,7 +31,11 @@ from pathlib import Path
 
 import pytest
 
-from evals.analysis.dos_input_bound_resolution import TRACE_CITATIONS, resolve_issue_25
+from evals.analysis.dos_input_bound_resolution import (
+    TRACE_CITATIONS,
+    resolve_issue_25,
+    resolve_issue_54,
+)
 
 RECORDING_PATH = (
     Path(__file__).resolve().parent.parent
@@ -39,6 +43,13 @@ RECORDING_PATH = (
     / "recordings"
     / "dos-overlong-query-max-query-chars"
     / "20260722T031540Z-draw1.json"
+)
+
+ISSUE_54_RECORDING_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "evals"
+    / "recordings"
+    / "dos-unbounded-chat-message-length"
 )
 
 _TARGET_REPO = Path(__file__).resolve().parent.parent.parent / "agentforge-2-evidence-agent"
@@ -52,6 +63,19 @@ def _target_repo_available() -> bool:
 @pytest.fixture()
 def draw1() -> dict:
     return json.loads(RECORDING_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.fixture()
+def issue_54_draw() -> dict:
+    # Single-draw honesty (issue #54's own escalation rules): exactly one
+    # recording is expected under this case's directory -- fail loudly, not
+    # silently pick one of several, if that ever stops being true.
+    candidates = sorted(ISSUE_54_RECORDING_PATH.glob("*-draw1.json"))
+    assert len(candidates) == 1, (
+        f"expected exactly one draw1 recording under {ISSUE_54_RECORDING_PATH}, "
+        f"found {len(candidates)}: {candidates}"
+    )
+    return json.loads(candidates[0].read_text(encoding="utf-8"))
 
 
 def test_recording_exists_and_is_the_naive_black_box_reading(draw1):
@@ -102,6 +126,47 @@ def test_resolve_issue_25_rejects_a_recording_shaped_like_a_real_error(draw1):
     mutated["events"] = [["error", {"type": "RetrievalError"}], *draw1["events"]]
     with pytest.raises(ValueError):
         resolve_issue_25(mutated)
+
+
+def test_white_box_trace_covers_every_issue_54_path():
+    cited_files = {file for file, _line, _quote in TRACE_CITATIONS}
+    # Every hop issue #54 traces: the schema, the LLM-prompt path
+    # (planner.py), the conversation store (chat.py's ConversationStore
+    # class), and the regex-scan guards (extraction.py).
+    assert "services/copilot-agent/app/planner.py" in cited_files
+    assert "services/copilot-agent/app/extraction.py" in cited_files
+    cited_chat_lines = {line for file, line, _quote in TRACE_CITATIONS if file.endswith("chat.py")}
+    # ConversationStore's full method surface (get/create/append_turn) is
+    # cited -- proving by citation, not assertion, that eviction/TTL/cap
+    # code is structurally absent from the class.
+    assert {578, 580, 583, 590}.issubset(cited_chat_lines)
+
+
+def test_resolve_issue_54_is_a_confirmed_finding_given_the_real_draw(issue_54_draw):
+    resolution = resolve_issue_54(issue_54_draw)
+
+    assert resolution.disposition == "confirmed-finding"
+    # No layer of the deployed stack -- application code or the inference
+    # engine -- rejected or truncated the oversized message.
+    assert resolution.message_length_bound_exists_anywhere is False
+    assert resolution.llm_prompt_path_bounded_by_app_code is False
+    assert resolution.conversation_store_has_eviction is False
+    # The regex-scan path is unbounded-input but linear-time, not itself a
+    # distinct amplification primitive -- do not overclaim it.
+    assert resolution.regex_scan_paths_linear_time is True
+    assert resolution.live_draw_status == 200
+    assert resolution.live_draw_label == "accepted_no_bound_observed"
+
+
+def test_resolve_issue_54_rejects_a_draw_shaped_like_a_rejection(issue_54_draw):
+    # Same discipline as resolve_issue_25's mutation guard: this resolver is
+    # scoped to the specific observed shape (200, accepted_no_bound_observed)
+    # and must not silently reuse that verdict for a differently-shaped draw.
+    mutated = dict(issue_54_draw)
+    mutated["detection_label"] = "rejected_context_overflow"
+    mutated["vulnerable"] = False
+    with pytest.raises(ValueError):
+        resolve_issue_54(mutated)
 
 
 @pytest.mark.skipif(
