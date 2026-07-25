@@ -12,12 +12,22 @@ asks for a white-box trace to resolve the ambiguity between those two
 readings.
 
 **Scope, stated precisely (see `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`
-for the full narrative):** this module resolves ONLY the retrieval-hop
-``MAX_QUERY_CHARS`` hypothesis issue #25 posed. It does not, and must not
-be read to, establish that ``/chat`` is bounded in general -- the same raw
-message also reaches the LLM prompt, the process-global conversation
-store, and unbounded regex scans, none of which this trace examines. Those
-paths are untraced and tracked separately at issue #54.
+for the full narrative):** ``resolve_issue_25`` below resolves ONLY the
+retrieval-hop ``MAX_QUERY_CHARS`` hypothesis issue #25 posed. It does not,
+and must not be read to, establish that ``/chat`` is bounded in general --
+the same raw message also reaches the LLM prompt, the process-global
+conversation store, and unbounded regex scans.
+
+``resolve_issue_54`` (added below, see
+`docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` for the full narrative) completes
+that trace: all three of those paths are unbounded in application code,
+and one live draw confirms no layer of the deployed stack rejects an
+oversized message either. Disposition: **confirmed-finding**, narrowly
+scoped to the conversation-store's unbounded resource growth (no eviction,
+no cap) -- see ``Issue54Resolution``'s docstring for why the LLM-prompt
+path is unbounded in code but only operationally (not app-level) bounded,
+and why the regex-scan path is unbounded-input but linear-time, not itself
+a distinct DoS amplifier.
 
 **The traced call chain, target repo pinned at tag ``v2.0.0`` (content-
 addressed via ``git show v2.0.0:<path>`` -- never checked out):**
@@ -232,6 +242,73 @@ TRACE_CITATIONS: tuple[tuple[str, int, str], ...] = (
         118,
         "query: str",
     ),
+    # -- issue #54 additions: the three untraced paths (LLM prompt,
+    # conversation store, regex scans), traced to completion below. Every
+    # citation issue #54's own write-up (docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md)
+    # makes is represented here, machine-checked the same way as #25's.
+    (
+        # ConversationStore's docstring names it a placeholder ("get /
+        # create / append") -- proof, in the target's own words, that no
+        # fourth (evict/expire/cap) method was ever added.
+        "services/copilot-agent/app/chat.py",
+        573,
+        "TODO(P4.2): replace with the durable trace store",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        580,
+        "def get(self, conversation_id: str) -> Conversation | None:",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        583,
+        "def create(self, patient_id: int, patient_name: str | None = None) -> Conversation:",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        590,
+        "def append_turn(self, conversation_id: str, turn: Turn) -> None:",
+    ),
+    (
+        # llama-server's fixed, preallocated KV-cache size in the deployed
+        # dev-easy stack -- the operational (not application-code) ceiling
+        # on the LLM-prompt path. See the module docstring's "LLM-prompt
+        # path" section for why this is a deployment-config fact, not an
+        # app-level defense.
+        "docker/development-easy/docker-compose.copilot.yml",
+        127,
+        "16384",
+    ),
+    (
+        "services/copilot-agent/app/extraction.py",
+        784,
+        "_PATIENT_NUMBER_RE = re.compile",
+    ),
+    (
+        "services/copilot-agent/app/extraction.py",
+        793,
+        "_PAIRED_NAME_NUMBER_RE = re.compile(",
+    ),
+    (
+        "services/copilot-agent/app/extraction.py",
+        810,
+        "def _foreign_patient_references(question: str, patient_id: int) -> tuple[set[str], set[str]]:",
+    ),
+    (
+        "services/copilot-agent/app/extraction.py",
+        961,
+        "_GUARD_PATIENT_NUMBER_RE = re.compile(",
+    ),
+    (
+        "services/copilot-agent/app/extraction.py",
+        978,
+        "_PATIENT_NAMED_RE = re.compile(",
+    ),
+    (
+        "services/copilot-agent/app/extraction.py",
+        1022,
+        "_SWITCH_TO_NAME_RE = re.compile(",
+    ),
 )
 
 # ``guard_reachable_on_deployed_config`` (below) is NOT a bare hardcoded
@@ -316,5 +393,136 @@ def resolve_issue_25(recording: dict[str, Any]) -> IssueResolution:
             "the LLM-prompt, conversation-store, and regex-scan paths the "
             "same raw message also reaches are untraced and open at "
             "issue #54."
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class Issue54Resolution:
+    """The resolved verdict for issue #54 -- the three paths #25 left
+    untraced (LLM prompt, conversation store, regex scans) -- combining the
+    white-box trace (``TRACE_CITATIONS``' #54 additions) with one live,
+    recorded draw (``evals/recordings/dos-unbounded-chat-message-length/``).
+
+    See ``docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`` for the full narrative.
+    Field-by-field:
+
+    - ``message_length_bound_exists_anywhere``: whether ANY layer of the
+      deployed stack (Pydantic/FastAPI/uvicorn app code, or the inference
+      engine) rejects or truncates an oversized ``/chat`` message. ``False``:
+      the live draw sent ~7x ``MAX_QUERY_CHARS`` and got a normal 200+answer,
+      no rejection at any layer.
+    - ``llm_prompt_path_bounded_by_app_code``: whether ``app.planner``
+      truncates/windows the prompt before sending it to the LLM. ``False``
+      (``planner.py:636`` -- no truncation exists in this codebase).
+    - ``conversation_store_has_eviction``: whether ``ConversationStore``
+      ever evicts, expires, or caps its ``_conversations`` dict or any
+      conversation's ``history``. ``False`` -- the class has exactly three
+      methods (``get``/``create``/``append_turn``, all cited in
+      ``TRACE_CITATIONS``) and its own docstring calls itself a TODO(P4.2)
+      placeholder with no eviction path.
+    - ``regex_scan_paths_linear_time``: whether the guard regexes scanning
+      the raw message (``_GUARD_PATIENT_NUMBER_RE``, ``_PATIENT_NAMED_RE``,
+      ``_SWITCH_TO_NAME_RE``, ``_PATIENT_NUMBER_RE``,
+      ``_PAIRED_NAME_NUMBER_RE``) risk catastrophic (exponential)
+      backtracking. ``True`` (they are linear/near-linear -- bounded
+      quantifiers only, ``{0,2}``/``{1,2}``, no nested unbounded groups) --
+      this path is unbounded-INPUT but not a distinct amplification
+      primitive; do not overclaim it.
+    """
+
+    disposition: str
+    message_length_bound_exists_anywhere: bool
+    llm_prompt_path_bounded_by_app_code: bool
+    llm_prompt_path_bounded_operationally: bool
+    conversation_store_has_eviction: bool
+    regex_scan_paths_linear_time: bool
+    live_draw_status: int
+    live_draw_label: str
+    rationale: str
+    citations: tuple[tuple[str, int, str], ...] = TRACE_CITATIONS
+
+
+def resolve_issue_54(recording: dict[str, Any]) -> Issue54Resolution:
+    """Combine the white-box trace with the one live, recorded draw
+    (``evals/cases/dos_unbounded_chat_message.py``'s
+    ``dos-unbounded-chat-message-length`` case) to produce issue #54's
+    final, evidence-backed disposition.
+
+    Expects the recorded draw's observed shape from that case's own
+    ``detect()``: ``status == 200`` and
+    ``detection_label == "accepted_no_bound_observed"`` -- an oversized
+    message accepted with no visible rejection at any layer. A
+    differently-shaped draw (e.g. a real context-overflow rejection) would
+    mean the deployed stack DOES bound this path operationally, which is a
+    different disposition this function is not scoped to compute -- same
+    discipline as ``resolve_issue_25``'s shape guard.
+    """
+    accepted_no_bound = (
+        recording.get("status") == 200
+        and recording.get("detection_label") == "accepted_no_bound_observed"
+        and recording.get("vulnerable") is True
+    )
+    if not accepted_no_bound:
+        raise ValueError(
+            "resolve_issue_54 expects the recorded "
+            "dos-unbounded-chat-message-length draw shape (status 200, "
+            "detection_label='accepted_no_bound_observed', vulnerable=True) "
+            "-- got something else; the disposition below assumes that "
+            "observed shape."
+        )
+
+    return Issue54Resolution(
+        disposition="confirmed-finding",
+        message_length_bound_exists_anywhere=False,
+        llm_prompt_path_bounded_by_app_code=False,
+        llm_prompt_path_bounded_operationally=True,
+        conversation_store_has_eviction=False,
+        regex_scan_paths_linear_time=True,
+        live_draw_status=recording["status"],
+        live_draw_label=recording["detection_label"],
+        rationale=(
+            "ChatRequest.message (chat.py:137) has no max_length/constr "
+            "bound anywhere in application code, unlike feedback.py:75's "
+            "MAX_COMMENT_LENGTH. The white-box trace confirms all three "
+            "paths issue #25 left untraced are unbounded in application "
+            "code: (1) the LLM prompt -- planner.py:636 embeds the raw "
+            "message verbatim, re-sent every turn for up to "
+            "_DEFAULT_MAX_TURNS=6 turns (planner.py:98), no truncation "
+            "anywhere in app.planner; (2) the conversation store -- "
+            "ConversationStore (chat.py:570-594) is a process-global dict "
+            "with exactly three methods (get/create/append_turn) and no "
+            "eviction, TTL, or cap on conversation count or per-turn size, "
+            "confirmed by its own TODO(P4.2) placeholder docstring; (3) "
+            "regex scans -- detect_foreign_patient_reference (chat.py:1165) "
+            "and apply_subject_check (chat.py:1256) scan the raw message "
+            "with regexes that use only bounded quantifiers ({0,2}/{1,2}, "
+            "no nested unbounded groups), so this path is unbounded-input "
+            "but linear-time, not a distinct amplification primitive. One "
+            "live draw (single-draw honesty) sent an ~14,000-char message "
+            "(7x MAX_QUERY_CHARS) to the deployed dev-easy stack and "
+            "observed a normal 200+answer -- no rejection at the "
+            "Pydantic/FastAPI/uvicorn layer, and no context-overflow error "
+            "from llama-server for this payload size. The LLM-prompt path "
+            "is operationally bounded only by llama-server's fixed, "
+            "preallocated --ctx-size 16384 KV cache in THIS deployment "
+            "(docker-compose.copilot.yml:127) -- a config fact, not an "
+            "application-level defense; swapping COPILOT_LLM_ENGINE to "
+            "ollama or a different ctx-size changes this ceiling with no "
+            "code change. The conversation-store growth path has NO "
+            "bound of any kind, operational or otherwise: every /chat call "
+            "that completes a turn permanently grows the process-global "
+            "store (unbounded conversation count via create(), unbounded "
+            "per-turn text via append_turn()), for the life of the "
+            "process, with no rate limit or cap observed anywhere in the "
+            "traced code. This is a genuine, code-verified, unbounded "
+            "resource-growth defect -- confirmed-finding, not merely "
+            "hypothesized -- though the magnitude of real-world impact "
+            "(time-to-exhaustion under realistic traffic) was not measured "
+            "live: no probe was run to actually exhaust host or container "
+            "memory, by design (rules of engagement forbid trying to OOM "
+            "the host, and doing so was unnecessary -- the absence of any "
+            "eviction code is dispositive on its own, not merely "
+            "suggestive)."
         ),
     )
