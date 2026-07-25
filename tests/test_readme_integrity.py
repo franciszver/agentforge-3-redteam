@@ -48,6 +48,10 @@ def _looks_like_repo_path(ref: str) -> bool:
         return False
     if any(ch.isspace() for ch in ref):
         return False
+    if ":" in ref:
+        # excludes model tags like "huihui_ai/qwen2.5-abliterate:7b" -- not
+        # a filesystem path even though it contains a slash.
+        return False
     return "/" in ref
 
 

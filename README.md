@@ -2,14 +2,19 @@
 
 [![CI](https://github.com/franciszver/agentforge-3-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/franciszver/agentforge-3-redteam/actions/workflows/ci.yml)
 
-> **Status: Bootstrap (P3.0) and Stage 1 target drive (P3.1) are done.** A
-> fresh, independent repo — not a duplicate or fork. Its attack target is the
-> Phase 2 co-pilot
+> **Status: platform complete.** Six agents (Red Team, Judge, Orchestrator,
+> Documentation, plus the Regression Harness and Observability Layer),
+> versioned inter-agent contracts, an end-to-end campaign runner, and a
+> deterministic regression suite are all shipped. Three critical
+> vulnerabilities were found, Judge-confirmed, and owner-approved
+> (`docs/vuln_reports/`); a fourth candidate remains open and untraced
+> (issue #54) and is **not** claimed as a finding. CI is green and this repo
+> is public. Its attack target is the Phase 2 co-pilot
 > ([agentforge-2-evidence-agent](https://github.com/franciszver/agentforge-2-evidence-agent),
-> pinned `v2.0.0`), currently driven **locally as a black box**; live
-> Tailscale exposure is deferred (see issue #3). The live plan is
-> **[GitHub Project #4, "AgentForge Red-Team Platform"](https://github.com/users/franciszver/projects/4)** —
-> planning docs below are frozen at import.
+> pinned `v2.0.0`), driven **locally as a black box**; the deployed-URL
+> hard gate is satisfied via a private Tailscale tailnet (issue #3), not a
+> public host. The live plan is
+> **[GitHub Project #4, "AgentForge Red-Team Platform"](https://github.com/users/franciszver/projects/4)**.
 
 ## Demo
 
@@ -31,14 +36,17 @@ trust domains** ("conflict of interest by design"):
 - **Documentation Agent** — Judge-confirmed exploits → structured vuln reports.
 - **Regression harness** + observability that feeds the Orchestrator's decisions.
 
-Threat model maps to OWASP Top 10 + OWASP LLM Top 10. The Red Team Agent's
-model strategy (local uncensored vs. cloud vs. hybrid) is decided at
-Architecture Defense (P3.5) — see the decision record.
+Threat model maps to OWASP Top 10 + OWASP LLM Top 10 (`docs/THREAT_MODEL.md`).
+The Red Team Agent's model strategy is **decided**: a local, uncensored
+("abliterated") model, `huihui_ai/qwen2.5-abliterate:7b`, served CPU-only
+(`num_gpu: 0`) to keep the single 12 GB GPU free for the target — a
+swappable config constant (`DEFAULT_MODEL` in `redteam/agents/red_team.py`),
+not a hardcoded assumption. Full design record: `docs/ARCHITECTURE.md`.
 
-See `planning/` for the brief and the authoritative, paste-ready kickoff
-(**`planning/PHASE3_KICKOFF_PROMPT.md`**) — grounded in Phase 2's real, measured
-attack surface (issue #29), superseding the older generic
-`planning/KICKOFF_PROMPT.md`. The attack target is frozen at tag **`v2.0.0`**.
+The attack target is frozen at tag **`v2.0.0`**. See `docs/ARCHITECTURE.md`
+(component design), `docs/DEMO_SCRIPT.md` (reproducible walkthrough),
+`docs/ATO_EVIDENCE_PACKET.md` (evidence rollup), and `docs/vuln_reports/`
+(the filed findings) for the full deliverable set.
 
 ## AgentForge series
 
