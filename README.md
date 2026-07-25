@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/franciszver/agentforge-3-redteam/actions/workflows/ci.yml/badge.svg)](https://github.com/franciszver/agentforge-3-redteam/actions/workflows/ci.yml)
 
-> **Status: platform complete.** Six agents (Red Team, Judge, Orchestrator,
-> Documentation, plus the Regression Harness and Observability Layer),
-> versioned inter-agent contracts, an end-to-end campaign runner, and a
-> deterministic regression suite are all shipped. Three critical
-> vulnerabilities were found, Judge-confirmed, and owner-approved
-> (`docs/vuln_reports/`); a fourth candidate remains open and untraced
-> (issue #54) and is **not** claimed as a finding. CI is green and this repo
-> is public. Its attack target is the Phase 2 co-pilot
+> **Status: platform complete.** Six components — four agents (Red Team,
+> Judge, Orchestrator, Documentation) plus the Regression Harness and
+> Observability Layer (shared infrastructure, not agents) — versioned
+> inter-agent contracts, an end-to-end campaign runner, and a deterministic
+> regression suite are all shipped. Three critical vulnerabilities were
+> found, Judge-confirmed, and owner-approved (`docs/vuln_reports/`); a
+> fourth candidate remains open and untraced (issue #54) and is **not**
+> claimed as a finding. Its attack target is the Phase 2 co-pilot
 > ([agentforge-2-evidence-agent](https://github.com/franciszver/agentforge-2-evidence-agent),
 > pinned `v2.0.0`), driven **locally as a black box**; the deployed-URL
 > hard gate is satisfied via a private Tailscale tailnet (issue #3), not a
