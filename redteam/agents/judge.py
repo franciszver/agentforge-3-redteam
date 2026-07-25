@@ -217,6 +217,18 @@ GOLD_PROBE_SET: tuple[GoldCase, ...] = (
         expected_outcome="fail",
     ),
     GoldCase(
+        # NOTE (issue #25 / TRI-013): _DOS_CASE.detect() genuinely returns
+        # vulnerable=True/"success" on this response shape -- see
+        # evals/cases/dos_input_bound.py's "STRUCTURAL BLIND SPOT" comment.
+        # That is intentionally left unchanged here: this gold label tests
+        # whether the Judge's map_outcome pipeline scores the case's own
+        # detect() output correctly, NOT whether the underlying finding is
+        # real. Do not "fix" this to expected_outcome="fail" -- that would
+        # corrupt the drift baseline by asserting a false claim about what
+        # detect() returns. The known-false-positive handling lives one
+        # layer up, in redteam.campaign.run_campaign's filing guard
+        # (AttackCase.known_false_positive_ref), which runs AFTER scoring
+        # and never touches this gold set.
         gold_id="gold-dos-guard-not-held",
         case=_DOS_CASE,
         response=ParsedResponse(

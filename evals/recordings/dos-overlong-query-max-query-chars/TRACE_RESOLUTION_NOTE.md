@@ -8,17 +8,23 @@ event). The file is left unmodified — it remains an honest, unedited
 record of that single draw.
 
 A subsequent white-box trace (issue #25) resolved the ambiguity that
-label cannot: the guard (`MAX_QUERY_CHARS`, `app/retrieval.py`) **does**
-sit on this exact path and **does** fire on the raw message; the 200/no-
-visible-rejection outcome is explained by `app/chat.py`'s pre-existing,
-documented fail-soft handling swallowing the guard's `RetrievalError`
-rather than by the guard being absent or bypassed.
+label cannot, narrowly: the guard (`MAX_QUERY_CHARS`, `app/retrieval.py`)
+**does** sit on this exact path and **does** fire on the raw message,
+**when evidence retrieval is enabled** (off by default; only the dev-easy
+stack turns it on); the 200/no-visible-rejection outcome on that hop is
+explained by `app/chat.py`'s pre-existing, documented fail-soft handling
+swallowing the guard's `RetrievalError` rather than by the guard being
+absent or bypassed. This does **not** establish that `/chat` is bounded
+in general — the same raw message also reaches the LLM prompt, the
+conversation store, and unbounded regex scans, none of which this trace
+examined; those are tracked separately, open, at issue #54.
 
 Full trace, file:line citations, and final disposition
-(**dismissed-with-evidence**):
+(**dismissed-with-evidence, narrowly**):
 `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`.
 
 Machine-checked resolution logic:
-`evals/cases/dos_input_bound_resolution.py` (`resolve_issue_25`), exercised
-against this exact recording by
-`tests/test_dos_input_bound_resolution.py`.
+`evals/analysis/dos_input_bound_resolution.py` (`resolve_issue_25`),
+exercised against this exact recording by
+`tests/test_dos_input_bound_resolution.py`, whose citations are verified
+against the pinned target when the sibling checkout is present.

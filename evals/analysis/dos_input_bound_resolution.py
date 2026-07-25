@@ -11,6 +11,14 @@ rejection was swallowed before reaching the client." Issue #25 explicitly
 asks for a white-box trace to resolve the ambiguity between those two
 readings.
 
+**Scope, stated precisely (see `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`
+for the full narrative):** this module resolves ONLY the retrieval-hop
+``MAX_QUERY_CHARS`` hypothesis issue #25 posed. It does not, and must not
+be read to, establish that ``/chat`` is bounded in general -- the same raw
+message also reaches the LLM prompt, the process-global conversation
+store, and unbounded regex scans, none of which this trace examines. Those
+paths are untraced and tracked separately at issue #54.
+
 **The traced call chain, target repo pinned at tag ``v2.0.0`` (content-
 addressed via ``git show v2.0.0:<path>`` -- never checked out):**
 
@@ -43,15 +51,20 @@ addressed via ``git show v2.0.0:<path>`` -- never checked out):**
 
 **So the guard DOES fire on the raw ``/chat`` message, verbatim, when
 evidence retrieval is enabled** -- and it fires before any unbounded work
-(no FTS5 expression is ever built for a rejected query; the DoS the guard
-exists to prevent, per its own module docstring, does not occur).
+on that hop (no FTS5 expression is ever built for a rejected query; the
+FTS5/embedding-exhaustion DoS the guard exists to prevent, per its own
+module docstring, does not occur on that hop).
 
 **Is evidence retrieval enabled on the deployment the draw was recorded
 against?** Yes: ``config.py:200`` defaults ``copilot_evidence_retrieval_enabled``
 to ``False``, but the dev-easy stack used for live probes
 (``docker/development-easy/docker-compose.copilot.yml:289``) sets
 ``COPILOT_EVIDENCE_RETRIEVAL_ENABLED: "true"`` explicitly -- the deployed
-target this repo drives has the flag ON.
+target this repo drives has the flag ON. **On a default-configuration
+deployment (flag left at its ``False`` default) this guard is never
+reached at all** -- ``guard_reachable_on_deployed_config`` below is
+derived from the dev-easy stack's actual compose value, not asserted as a
+general property of the target.
 
 **Why did the client still see a normal 200, then?** Back at
 ``app/chat.py:1193-1197``, the call is wrapped fail-soft, BY DESIGN
@@ -71,18 +84,22 @@ if retrieval had never run. This is the SAME fail-soft posture already
 catalogued at ``docs/TRIAGE_LAB.md`` TRI-007 ("Fail-soft retrieval degrades
 to empty list on exception") for retrieval/fact-store errors generally; an
 oversized query is simply one more exception source that path already
-covers.
+covers. It also means this draw is a concrete, unprivileged induction of
+that TRI-007 fail-soft path -- see TRI-007's "Update" note.
 
-**Verdict: dismissed-with-evidence.** The raw ``/chat`` message DOES reach
-``MAX_QUERY_CHARS`` verbatim (resolving the open question issue #25 posed),
-the guard DOES fire and DOES bound the work performed (no unbounded FTS5
-expression is ever constructed for an oversized query -- the actual DoS the
-guard defends against does not occur), and the absence of a client-visible
-rejection is fully explained by chat.py's pre-existing, documented,
-deliberate fail-soft error handling -- not by the guard being absent,
-bypassed, or reachable-but-ineffective. There is no reproducible DoS or
-robustness gap here distinct from the already-catalogued TRI-007 fail-soft
-posture.
+**Verdict: dismissed-with-evidence, narrowly.** The raw ``/chat`` message
+DOES reach ``MAX_QUERY_CHARS`` verbatim when retrieval is enabled
+(resolving the open question issue #25 posed), the guard DOES fire and
+DOES bound the work performed on that hop (no unbounded FTS5 expression is
+ever constructed for an oversized query -- the specific DoS the guard
+defends against does not occur there), and the absence of a
+client-visible rejection is fully explained by chat.py's pre-existing,
+documented, deliberate fail-soft error handling -- not by the guard being
+absent, bypassed, or reachable-but-ineffective. This is NOT a claim that
+no reproducible DoS or robustness gap exists on ``/chat`` at all -- only
+that the specific retrieval-hop hypothesis issue #25 posed is dismissed.
+The LLM-prompt, conversation-store, and regex-scan paths remain untraced
+and open at issue #54.
 """
 
 from __future__ import annotations
@@ -145,11 +162,33 @@ TRACE_CITATIONS: tuple[tuple[str, int, str], ...] = (
     ),
 )
 
+# ``guard_reachable_on_deployed_config`` (below) is NOT a bare hardcoded
+# fact -- it is derived from TRACE_CITATIONS' own docker-compose.copilot.yml
+# entry, so a future edit to that citation (e.g. if the dev stack's default
+# ever flips) changes this value too instead of silently going stale. It
+# describes the dev-easy stack specifically, never a general/default-config
+# claim -- see the module docstring's "Is evidence retrieval enabled..."
+# section for why the default-config case is the opposite (guard NEVER
+# reached).
+_COMPOSE_CITATION = next(
+    citation for citation in TRACE_CITATIONS if citation[0].endswith("docker-compose.copilot.yml")
+)
+_DEV_STACK_EVIDENCE_RETRIEVAL_ENABLED = '"true"' in _COMPOSE_CITATION[2]
+
 
 @dataclass(frozen=True)
 class IssueResolution:
     """The resolved verdict for issue #25, derived from the white-box trace
-    (``TRACE_CITATIONS``) plus the recorded single black-box draw."""
+    (``TRACE_CITATIONS``) plus the recorded single black-box draw.
+
+    ``guard_reachable_on_deployed_config`` is an assertion about the
+    dev-easy stack specifically (derived from ``TRACE_CITATIONS``' own
+    docker-compose.copilot.yml entry, above) -- NOT a general statement
+    about default or production deployments. ``copilot_evidence_retrieval_enabled``
+    defaults to ``False`` (``config.py:200``); on any deployment that does
+    not explicitly override that default, the guard this resolution
+    discusses is never reached at all.
+    """
 
     disposition: str
     guard_reachable_on_deployed_config: bool
@@ -171,7 +210,8 @@ def resolve_issue_25(recording: dict[str, Any]) -> IssueResolution:
     .dos_input_bound.detect``) that cannot, by construction, distinguish
     "guard absent" from "guard fired, rejection swallowed fail-soft." This
     function is the white-box correction the recording's own docstring
-    calls for.
+    calls for -- scoped narrowly to the retrieval-hop hypothesis; see the
+    module docstring for what remains untraced (issue #54).
     """
     status_200_no_error = recording.get("status") == 200 and not any(
         event_name == "error" for event_name, _ in recording.get("events", [])
@@ -185,7 +225,7 @@ def resolve_issue_25(recording: dict[str, Any]) -> IssueResolution:
 
     return IssueResolution(
         disposition="dismissed-with-evidence",
-        guard_reachable_on_deployed_config=True,
+        guard_reachable_on_deployed_config=_DEV_STACK_EVIDENCE_RETRIEVAL_ENABLED,
         raw_message_reaches_guard_verbatim=True,
         guard_fires_before_unbounded_work=True,
         rejection_surfaced_to_client=False,
@@ -193,12 +233,16 @@ def resolve_issue_25(recording: dict[str, Any]) -> IssueResolution:
             "The raw /chat message reaches app/retrieval.py's "
             "MAX_QUERY_CHARS guard verbatim (evidence retrieval is ON in "
             "the deployed dev-easy config), and the guard fires BEFORE any "
-            "unbounded FTS5/embedding work -- no DoS occurs. The observed "
-            "200-with-no-visible-rejection is fully explained by "
-            "app/chat.py's pre-existing, documented fail-soft handling "
-            "(same posture as TRI-007), which swallows the guard's "
-            "RetrievalError and degrades to an empty evidence list rather "
-            "than failing the turn. Not a reproducible DoS or robustness "
-            "gap distinct from the already-catalogued fail-soft posture."
+            "unbounded FTS5/embedding work on the retrieval hop -- no DoS "
+            "occurs there. The observed 200-with-no-visible-rejection is "
+            "fully explained by app/chat.py's pre-existing, documented "
+            "fail-soft handling (same posture as TRI-007), which swallows "
+            "the guard's RetrievalError and degrades to an empty evidence "
+            "list rather than failing the turn. This is a narrow "
+            "dismissal of the retrieval-hop MAX_QUERY_CHARS hypothesis "
+            "only -- it does not establish /chat is bounded in general; "
+            "the LLM-prompt, conversation-store, and regex-scan paths the "
+            "same raw message also reaches are untraced and open at "
+            "issue #54."
         ),
     )

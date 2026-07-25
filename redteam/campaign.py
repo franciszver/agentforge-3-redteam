@@ -363,7 +363,33 @@ def run_campaign(
         )
 
         # -- 5. Store confirmed exploits + document ---------------------------
-        if verdict["outcome"] in ("success", "regression"):
+        outcome_confirmed = verdict["outcome"] in ("success", "regression")
+        if outcome_confirmed and case.known_false_positive_ref:
+            # A "success"/"regression" outcome on a case with a documented,
+            # verified known-false-positive shape (see
+            # ``AttackCase.known_false_positive_ref``, e.g.
+            # ``evals.cases.dos_input_bound``) must NOT auto-file a vuln
+            # report or an ExploitDB record -- that would auto-report a
+            # scenario this repo already documents as benign. The Judge's
+            # own scoring/drift-detection integrity is untouched: `verdict`
+            # above still reflects the case's honest, unmodified `detect`
+            # output (ARCHITECTURE.md §6's gold-probe drift baseline scores
+            # against `JudgeAgent.score`, never against this filing step,
+            # so this guard cannot corrupt it). The suppression itself is
+            # logged, not silently dropped, so it stays auditable.
+            action_log.append(
+                agent="documentation",
+                event_type="known_false_positive_suppressed",
+                case_id=verdict["case_id"],
+                category=attempt["category"],
+                details={
+                    "attempt_id": verdict["attempt_id"],
+                    "verdict_id": verdict["verdict_id"],
+                    "outcome": verdict["outcome"],
+                    "known_false_positive_ref": case.known_false_positive_ref,
+                },
+            )
+        elif outcome_confirmed:
             recording_path = record_run(
                 attempt["case_id"],
                 attempt["draw_number"],

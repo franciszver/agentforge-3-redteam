@@ -10,6 +10,7 @@ deterministic (docs/ARCHITECTURE.md §2's loop, wired end-to-end).
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -78,10 +79,89 @@ def _new_agents(recordings_dir: Path, *, no_findings_window: int = 5, budget_max
     return db, action_log, documentation, judge, red_team, orchestrator
 
 
+# A non-critical category's representative case, WITHOUT a
+# ``known_false_positive_ref`` -- ``dataclasses.replace`` off ``DOS_CASE``
+# purely for convenience (its ``detect``/message shape), re-categorized to
+# ``tool_misuse`` (severity "high", not "medium") specifically so this case
+# is NOT the real DOS_CASE and is therefore NOT suppressed by the
+# known-false-positive filing guard exercised in
+# ``test_dos_known_false_positive_is_not_auto_filed`` below. See
+# ``docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`` / issue #25 for why the
+# real DOS_CASE's "success" outcome is a documented false positive.
+_NORMAL_NON_FP_CASE = dataclasses.replace(
+    DOS_CASE,
+    id="synthetic-non-fp-tool-misuse",
+    category="tool_misuse",
+    known_false_positive_ref=None,  # explicitly NOT a known false positive
+)
+
+
 def test_full_loop_yields_stored_exploit_and_filed_vuln_report(tmp_path):
-    """Non-critical category (denial_of_service -> severity 'medium'): a
-    confirmed success is stored in ExploitDB AND auto-filed as a vuln_report
-    -- the full six-component chain, deterministic, no live calls."""
+    """Non-critical category (tool_misuse -> severity 'high'): a confirmed
+    success is stored in ExploitDB AND auto-filed as a vuln_report -- the
+    full six-component chain, deterministic, no live calls."""
+    recordings_dir = tmp_path / "recordings"
+    db, action_log, documentation, judge, red_team, orchestrator = _new_agents(recordings_dir)
+
+    result = run_campaign(
+        orchestrator=orchestrator,
+        red_team=red_team,
+        judge=judge,
+        documentation=documentation,
+        db=db,
+        action_log=action_log,
+        action_log_ref=tmp_path / "action_log.jsonl",
+        cases=[_NORMAL_NON_FP_CASE, AUTHZ_CASE],
+        target_client=lambda attempt: _vulnerable_response(),
+        max_iterations=1,
+        recordings_dir=recordings_dir,
+        snapshot_fn=lambda: _full_coverage_snapshot("tool_misuse"),
+    )
+
+    assert result.iterations_run == 1
+    assert result.stopped_reason == "max_iterations"
+    assert len(result.directives) == 1
+    assert result.directives[0]["category"] == "tool_misuse"
+    assert len(result.attempts) == 1
+    assert len(result.verdicts) == 1
+    assert result.verdicts[0]["outcome"] == "success"
+
+    assert len(result.exploit_ids) == 1
+    exploit_id = result.exploit_ids[0]
+    stored = db.get(exploit_id)
+    assert stored is not None
+    assert stored["category"] == "tool_misuse"
+    assert stored["status"] == "open"
+
+    assert len(result.filed_reports) == 1
+    assert result.pending_reports == []
+    report = result.filed_reports[0]
+    assert report["exploit_id"] == exploit_id
+    assert report["severity"] == "high"
+    assert report["requires_human_gate"] is False
+    assert documentation.get_filed(exploit_id) is not None
+
+    # Every step got logged for the Orchestrator's next decision.
+    events = action_log.query()
+    agents_seen = {e["agent"] for e in events}
+    assert {"observability", "orchestrator", "red_team", "judge", "harness", "documentation"} <= agents_seen
+    event_types_seen = {e["event_type"] for e in events}
+    assert "exploit_recorded" in event_types_seen
+    assert "vuln_report_filed" in event_types_seen
+
+
+def test_dos_known_false_positive_is_not_auto_filed(tmp_path):
+    """The REAL ``DOS_CASE`` (``evals/cases/dos_input_bound.py``): its
+    black-box ``detect`` genuinely cannot distinguish "guard absent" from
+    "guard fired, rejection swallowed fail-soft" (see
+    ``docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`` /
+    ``docs/TRIAGE_LAB.md`` TRI-013) -- a 200+answer response scores
+    ``outcome == "success"`` exactly as it did before this fix. What must
+    change is the FILING step: a documented known-false-positive must not
+    auto-file a vuln report or an ExploitDB record. This is the red-first
+    case for that fix; before ``AttackCase.known_false_positive_ref`` +
+    ``run_campaign``'s filing guard existed, this scenario auto-filed a
+    report exactly like the case above."""
     recordings_dir = tmp_path / "recordings"
     db, action_log, documentation, judge, red_team, orchestrator = _new_agents(recordings_dir)
 
@@ -100,36 +180,22 @@ def test_full_loop_yields_stored_exploit_and_filed_vuln_report(tmp_path):
         snapshot_fn=lambda: _full_coverage_snapshot("denial_of_service"),
     )
 
-    assert result.iterations_run == 1
-    assert result.stopped_reason == "max_iterations"
-    assert len(result.directives) == 1
-    assert result.directives[0]["category"] == "denial_of_service"
-    assert len(result.attempts) == 1
-    assert len(result.verdicts) == 1
+    # The Judge still scores this honestly as "success" -- the black-box
+    # detect() is not being papered over, only the auto-filing is guarded.
     assert result.verdicts[0]["outcome"] == "success"
 
-    assert len(result.exploit_ids) == 1
-    exploit_id = result.exploit_ids[0]
-    stored = db.get(exploit_id)
-    assert stored is not None
-    assert stored["category"] == "denial_of_service"
-    assert stored["status"] == "open"
-
-    assert len(result.filed_reports) == 1
+    # Nothing gets auto-filed or auto-recorded as an exploit for a
+    # documented known false positive.
+    assert result.exploit_ids == []
+    assert result.filed_reports == []
     assert result.pending_reports == []
-    report = result.filed_reports[0]
-    assert report["exploit_id"] == exploit_id
-    assert report["severity"] == "medium"
-    assert report["requires_human_gate"] is False
-    assert documentation.get_filed(exploit_id) is not None
+    assert db.all_records() == []
+    assert documentation.all_filed() == []
 
-    # Every step got logged for the Orchestrator's next decision.
-    events = action_log.query()
-    agents_seen = {e["agent"] for e in events}
-    assert {"observability", "orchestrator", "red_team", "judge", "harness", "documentation"} <= agents_seen
-    event_types_seen = {e["event_type"] for e in events}
-    assert "exploit_recorded" in event_types_seen
-    assert "vuln_report_filed" in event_types_seen
+    event_types_seen = {e["event_type"] for e in action_log.query()}
+    assert "known_false_positive_suppressed" in event_types_seen
+    assert "vuln_report_filed" not in event_types_seen
+    assert "exploit_recorded" not in event_types_seen
 
 
 def test_critical_finding_stays_pending_human_approval(tmp_path):

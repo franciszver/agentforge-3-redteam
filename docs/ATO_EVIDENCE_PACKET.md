@@ -16,10 +16,15 @@
   incident postmortem.
 - **Scope carried forward from every cited document.** No claim below
   upgrades an under-determined finding to confirmed. Issue #25 (an overlong
-  `/chat` message returning 200 with no visible rejection) stays
-  under-determined here exactly as `docs/TRIAGE_LAB.md` (TRI-013) and
-  `docs/THREAT_MODEL.md` leave it — it is not counted among the confirmed
-  criticals anywhere in this packet.
+  `/chat` message returning 200 with no visible rejection) is **resolved**,
+  not under-determined: `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` and
+  `docs/TRIAGE_LAB.md` (TRI-013) dismiss the `MAX_QUERY_CHARS`/retrieval-hop
+  hypothesis with evidence, narrowly — that hop is bounded when evidence
+  retrieval is enabled, and unreached when it is not. It is not counted
+  among the confirmed criticals anywhere in this packet. The three
+  untraced paths (LLM prompt, conversation store, regex scans) the same
+  raw message also reaches are tracked separately and remain open at
+  issue #54 — see `docs/THREAT_MODEL.md` for that surface.
 
 ---
 
@@ -386,9 +391,11 @@ All three carry `"approved_by": "owner"`, `"approved_at":
 reading each file directly (§2.1 above quotes the exact fields). A fourth
 recorded set exists for a non-critical, DoS-adjacent probe
 (`evals/recordings/dos-overlong-query-max-query-chars/`, 1 draw) — this is
-the bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-010
-(false-positive: the guard holds), not a fourth critical, and is not
-conflated with the three above.
+the bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-013
+(false positive, resolved narrowly by white-box trace, issue #25; not
+TRI-010, which covers the separately-documented ingestion/upload-size
+guards), not a fourth critical, and is not conflated with the three
+above.
 
 ### 5.3 Live-campaign + smoke evidence
 
@@ -540,8 +547,10 @@ describes — not because it was dramatic.
   are angles (auth model, dependency versions, self-scan, eval evidence,
   incident postmortem) ARCHITECTURE.md does not cover at all.
 - **No aspirational or unverified claim presented as fact:** the DoS
-  observation (#25) is named once, explicitly under-determined, and not
-  counted among the criticals; TRI-004's ACL-ON recommendation is stated as
+  observation (#25) is named once, its resolution scoped narrowly to the
+  retrieval hop it actually traced (not a general "no DoS exposure"
+  claim), and not counted among the criticals; TRI-004's ACL-ON
+  recommendation is stated as
   a recommendation, not an owner decision; the platform-vs-ARCHITECTURE.md
   generator-model discrepancy (§3.3) is disclosed rather than silently
   resolved in the packet's favor.
