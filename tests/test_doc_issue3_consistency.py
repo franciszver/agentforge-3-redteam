@@ -14,8 +14,8 @@ on stale, contradictory prose.
 
 The check: scan every committed Markdown file for the token ``issue #3``
 (word-bounded, so ``issue #30`` etc. don't match) and, in a window around
-each mention, assert the word ``deferred`` (or ``DEFERRED``) does not also
-appear. That co-occurrence is exactly the "still describes #3 as
+each mention, assert neither ``deferred`` nor ``pending`` (case-insensitive)
+also appears. That co-occurrence is exactly the "still describes #3 as
 deferred/pending" pattern that made THREAT_MODEL.md, TRIAGE_LAB.md, and
 STAGE1_TARGET.md stale. A window (rather than whole-file) match keeps this
 targeted: a file can legitimately discuss unrelated deferred work (e.g.
@@ -31,7 +31,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 _ISSUE3_RE = re.compile(r"issue #3\b")
-_DEFERRED_RE = re.compile(r"deferred", re.IGNORECASE)
+_STALE_STATUS_RE = re.compile(r"deferred|pending", re.IGNORECASE)
 
 # Characters of context scanned to either side of an "issue #3" mention.
 # Wide enough to span the wrapped sentences seen in STAGE1_TARGET.md (a
@@ -66,7 +66,7 @@ def test_no_committed_doc_describes_issue3_as_deferred():
             start = max(0, match.start() - _WINDOW)
             end = min(len(normalized), match.end() + _WINDOW)
             window = normalized[start:end]
-            if _DEFERRED_RE.search(window):
+            if _STALE_STATUS_RE.search(window):
                 rel = path.relative_to(REPO_ROOT).as_posix()
                 violations.append(f"{rel}: ...{window}...")
 
@@ -92,7 +92,7 @@ def test_no_committed_doc_frames_deployed_url_gate_as_pending():
         text = path.read_text(encoding="utf-8")
         normalized = " ".join(text.split())
         if re.search(
-            r"deployed-url hard gate\)? is explicitly deferred",
+            r"deployed-url hard gate\)? is explicitly (deferred|pending)",
             normalized,
             re.IGNORECASE,
         ):
@@ -100,6 +100,6 @@ def test_no_committed_doc_frames_deployed_url_gate_as_pending():
 
     assert not violations, (
         "the following committed docs still frame the deployed-URL hard "
-        "gate as explicitly deferred, but it was satisfied via a private "
-        f"tailnet exposure: {violations}"
+        "gate as explicitly deferred/pending, but it was satisfied via a "
+        f"private tailnet exposure: {violations}"
     )
