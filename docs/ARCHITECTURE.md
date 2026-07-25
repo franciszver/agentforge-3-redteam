@@ -11,7 +11,14 @@
   deterministically, and recorded a new under-determined DoS observation
   (#25) — those reproductions are real and logged in `prd/DECISIONS.md`, but
   severity/confirmation is a P3.13 (vulnerability-report) decision, not one
-  made here.
+  made here. (#25 is since resolved — see TRI-013 in `docs/TRIAGE_LAB.md`
+  and `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`: dismissed-with-evidence,
+  narrowly, for the `MAX_QUERY_CHARS` retrieval-hop hypothesis only. That
+  resolution also surfaced a limitation in this PR's own fix, tracked open
+  at issue #55: `Orchestrator._pick_next_case` never emits `case_id` in the
+  live loop, so the exact-probe suppression branch it adds is unreachable
+  live — a live campaign can still auto-file a `denial_of_service` report
+  for a novel overlong-query payload.)
 
 ## 1. Prose summary (~500 words)
 
@@ -246,12 +253,22 @@ supply-chain-adjacent and trust-boundary failures in someone else's system.
 **Judge drift-detection + correction method (concrete definition).** The
 Judge is periodically re-scored, not just trusted to hold steady: a **fixed,
 version-controlled gold-labeled probe set** (a held-out subset of the P3.4/6
-attack cases with a human-confirmed correct verdict for each) is re-run
-through the Judge on every Orchestrator-triggered full regression sweep. The
-Judge's score on each gold case is compared to its recorded prior score and
-to the human-confirmed label; if the Judge's **agreement rate with the gold
-labels drops below a fixed threshold (95%, i.e. it disagrees with the
-human-confirmed verdict on more than 1 in 20 gold cases)**, or if its score on
+attack cases, each with an expected verdict) is re-run through the Judge
+on every Orchestrator-triggered full regression sweep.
+(Clarification: a gold label records the **expected output of the scoring
+pipeline given that case's own `detect()`**, not necessarily a human
+judgement of exploitability. `gold-dos-guard-not-held`, for instance, keeps
+`expected_outcome="success"` even though issue #25's white-box trace
+resolved that specific probe as a documented false positive
+(`docs/TRIAGE_LAB.md` TRI-013) — flipping the gold label to match the
+false-positive verdict would make the drift check fire on every run and
+would assert something false about what `detect()` itself returns for that
+input. The gold set's job is to catch the Judge disagreeing with the
+pipeline's own deterministic behavior, not to encode a human exploitability
+verdict.) The Judge's score on each gold case is compared to its recorded
+prior score and to the gold label; if the Judge's **agreement rate with the
+gold labels drops below a fixed threshold (95%, i.e. it disagrees with the
+gold-set verdict on more than 1 in 20 gold cases)**, or if its score on
 **any individual gold case flips from its previous run's score**, the sweep
 is flagged `judge_drift_suspected` in Observability and the Orchestrator
 halts new attack directives until a human reviews the flagged cases —

@@ -362,8 +362,23 @@ def run_campaign(
             details=verdict,
         )
 
-        # -- 5. Store confirmed exploits + document ---------------------------
-        if verdict["outcome"] in ("success", "regression"):
+        # -- 5. Store confirmed exploits (unconditionally) + document ---------
+        # A confirmed ("success"/"regression") outcome is ALWAYS recorded --
+        # ``record_run`` and ``db.add_record`` below run for every confirmed
+        # outcome, full stop. A red-team platform must never destroy the
+        # only copy of a target's raw response just because the case it was
+        # scored against happens to carry a documented known-false-positive
+        # shape (see ``AttackCase.known_false_positive_ref``). What the
+        # known-false-positive annotation gates is narrower and comes
+        # AFTER the write: whether ``documentation.file_report`` runs for
+        # THIS attempt. The Judge's own scoring/drift-detection integrity
+        # stays untouched either way -- `verdict` above still reflects the
+        # case's honest, unmodified `detect` output, and this step never
+        # feeds back into `JudgeAgent.score`/`map_outcome`/`check_drift`
+        # (ARCHITECTURE.md §6's gold-probe drift baseline scores against
+        # `JudgeAgent.score` alone).
+        outcome_confirmed = verdict["outcome"] in ("success", "regression")
+        if outcome_confirmed:
             recording_path = record_run(
                 attempt["case_id"],
                 attempt["draw_number"],
@@ -385,6 +400,14 @@ def run_campaign(
                 "minimal_repro": _minimal_repro(attempt, verdict),
                 "recording_ref": str(recording_path),
             }
+            # Note: ``contracts/v1/exploit_record.schema.json`` is
+            # ``additionalProperties: false`` (see ``redteam.harness.db``'s
+            # module docstring), so the known-false-positive annotation is
+            # NOT smuggled into this contract-validated dict -- it is
+            # carried on the ``known_false_positive_suppressed`` action-log
+            # entry below instead, which names this exact ``exploit_id``
+            # and is the durable, queryable record of "this confirmed
+            # exploit is the documented benign probe."
             db.add_record(record)
             result.exploit_ids.append(exploit_id)
             action_log.append(
@@ -395,24 +418,61 @@ def run_campaign(
                 details=record,
             )
 
-            report = documentation.file_report(record)
-            if report["status"] == "pending_human_approval":
-                result.pending_reports.append(report)
+            # Narrow suppression: skip the REPORT only when this attempt is
+            # genuinely the documented, verified false-positive probe --
+            # not merely "some novel attempt in the same category as a
+            # case that has a known_false_positive_ref". The category_random
+            # selector generates a NOVEL message per draw (module docstring
+            # "Which category gets judged"), so a message match against the
+            # case's own documented probe (``case.message``) is what proves
+            # this is that exact, already-triaged scenario reproducing
+            # again, not a new payload that merely landed in the same
+            # category and happens to trip the same black-box detect()
+            # shape. A novel payload in ``denial_of_service`` (or any other
+            # category) always files normally.
+            is_documented_probe = (
+                case.known_false_positive_ref is not None
+                # ``.strip()`` on both sides: ``RedTeamAgent``'s
+                # category_random/mutation_of paths always strip the
+                # generated message (red_team.py), so a trailing/leading
+                # whitespace-only difference must not defeat the "this IS
+                # the documented probe" match.
+                and attempt["message"].strip() == case.message.strip()
+            )
+            if is_documented_probe:
                 action_log.append(
                     agent="documentation",
-                    event_type="vuln_report_pending_human_approval",
-                    category=record["category"],
-                    details=report,
+                    event_type="known_false_positive_suppressed",
+                    case_id=verdict["case_id"],
+                    category=attempt["category"],
+                    details={
+                        "attempt_id": verdict["attempt_id"],
+                        "verdict_id": verdict["verdict_id"],
+                        "exploit_id": exploit_id,
+                        "outcome": verdict["outcome"],
+                        "selector": selector,
+                        "known_false_positive_ref": case.known_false_positive_ref,
+                    },
                 )
             else:
-                result.filed_reports.append(report)
-                action_log.append(
-                    agent="documentation",
-                    event_type="vuln_report_filed",
-                    category=record["category"],
-                    details=report,
-                )
-            all_vuln_reports.append(report)
+                report = documentation.file_report(record)
+                if report["status"] == "pending_human_approval":
+                    result.pending_reports.append(report)
+                    action_log.append(
+                        agent="documentation",
+                        event_type="vuln_report_pending_human_approval",
+                        category=record["category"],
+                        details=report,
+                    )
+                else:
+                    result.filed_reports.append(report)
+                    action_log.append(
+                        agent="documentation",
+                        event_type="vuln_report_filed",
+                        category=record["category"],
+                        details=report,
+                    )
+                all_vuln_reports.append(report)
 
         # -- 6. Regression sweep (only on caller-named iterations) -----------
         if result.iterations_run in regression_sweep_at:

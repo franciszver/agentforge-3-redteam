@@ -18,12 +18,18 @@ evidence table this script complements with runnable commands.
   `model_client` (`redteam/agents/red_team.py`), always called with
   `num_gpu: 0` (CPU-only; see that module's docstring). Run `nvidia-smi`
   immediately before and after any live call and confirm VRAM stays flat.
-- `pytest tests/ -q` green (**177 passed**, deterministic — no live/network/
-  GPU call in the default suite; confirmed while writing this doc).
+- `pytest tests/ -q` green (deterministic — no live/network/GPU call in the
+  default suite; confirmed while writing this doc). The printed count is
+  environment-dependent: **207 passed** when the sibling Phase 2 checkout
+  (`../agentforge-2-evidence-agent`, pinned `v2.0.0`) is present locally;
+  **184 passed, 23 skipped** in CI and for anyone cloning this repo without
+  that sibling (the 23 skipped are `TestTraceCitationsAgainstPinnedTarget`,
+  which class-skips cleanly when the sibling is absent — see
+  `tests/test_dos_input_bound_resolution.py`).
 
 ```
 $ pytest tests/ -q
-177 passed in 0.35s
+207 passed in 0.63s          # with the sibling Phase 2 checkout present
 ```
 
 ---
@@ -321,9 +327,14 @@ here for completeness:
 ## CI
 
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
-`python -m pytest tests/ -q` (177 passed) — on every push to `main` and on
-every pull request. Live-model and target-stack runs remain manual, outside
-CI: every command in this script was run locally against the dev stack
-while writing this doc. `pytest tests/ -q` (177 passed) is still the
+`python -m pytest tests/ -q` — on every push to `main` and on every pull
+request. CI does not check out the sibling Phase 2 target, so its printed
+count is **184 passed, 23 skipped** (the 23 skipped are
+`TestTraceCitationsAgainstPinnedTarget`, which class-skips cleanly when
+`../agentforge-2-evidence-agent` is absent). Live-model and target-stack
+runs remain manual, outside CI: every command in this script was run
+locally against the dev stack while writing this doc, with the sibling
+checkout present, giving **207 passed**. `pytest tests/ -q` is still the
 reproducibility bar — re-run it after pulling this branch to confirm
-nothing here has drifted.
+nothing here has drifted: expect **207 passed** if you have the sibling
+Phase 2 checkout at `v2.0.0`, or **184 passed, 23 skipped** if you don't.

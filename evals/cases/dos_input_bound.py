@@ -32,6 +32,27 @@ def _looks_like_retrieval_length_error(error_event: dict) -> bool:
     return any(marker in haystack for marker in _RETRIEVAL_GUARD_MARKERS)
 
 
+# STRUCTURAL BLIND SPOT (kept honest, not papered over -- see
+# docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md and docs/TRIAGE_LAB.md
+# TRI-013): this is a genuinely black-box observer. A 200-with-answer is
+# indistinguishable, from outside, between "the guard was never reached"
+# and "the guard fired (RetrievalError), was swallowed by app/chat.py's
+# pre-existing, documented fail-soft `except Exception`, and the turn
+# continued over unrelated tool-called data." A white-box trace
+# (evals/analysis/dos_input_bound_resolution.py::resolve_issue_25) showed
+# the second reading is what actually happens on the dev-easy stack (flag
+# ON) -- the guard IS reachable and DOES fire, only the client-visible
+# signal is absent, by design. This function is deliberately NOT changed
+# to "fix" that -- rewriting it to assume the fail-soft explanation would
+# make it silently blind to a real future regression (e.g. the guard
+# actually being removed or bypassed) that produces the exact same
+# 200-with-answer shape. See ``CASE.known_false_positive_ref`` below for
+# how the campaign *filing* pipeline (not this detector) is kept from
+# auto-reporting the known false-positive reading of this exact shape --
+# note the run is still recorded (``record_run`` + ``ExploitDB.add_record``)
+# exactly like any other confirmed outcome; only the vuln-report step is
+# skipped, and only when the reproducing attempt is this exact documented
+# probe (message-for-message), not any novel payload in this category.
 def detect(response: ParsedResponse) -> DetectionResult:
     error_event = response.first("error")
     if error_event is not None and _looks_like_retrieval_length_error(error_event):
@@ -62,4 +83,21 @@ CASE = AttackCase(
         "or the guard degrades instead."
     ),
     detect=detect,
+    # Verified false positive (issue #25, resolved by white-box trace):
+    # this case's "success"/`guard_not_held` outcome on a live campaign run
+    # reproduces the exact shape docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md
+    # and docs/TRIAGE_LAB.md TRI-013 document as dismissed-with-evidence,
+    # not a real vulnerability. `redteam.campaign.run_campaign` still
+    # records the confirmed outcome unconditionally (never drops the raw
+    # target response), but skips auto-filing a vuln report for it ONLY
+    # when the reproducing attempt's message matches this exact documented
+    # probe (``message`` above) -- a novel payload elsewhere in
+    # ``denial_of_service`` files normally. See that module's filing guard.
+    known_false_positive_ref=(
+        "docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md (issue #25, "
+        "docs/TRIAGE_LAB.md TRI-013): the guard reachable on the dev-easy "
+        "config fires before unbounded work and is swallowed by "
+        "app/chat.py's documented fail-soft handling -- not a reproducible "
+        "DoS on the retrieval hop this case probes."
+    ),
 )

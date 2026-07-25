@@ -12,7 +12,11 @@
 - **Grounding sources:** `docs/vuln_reports/VULN-0001.json`,
   `docs/vuln_reports/VULN-0002.json`, `docs/vuln_reports/VULN-0003.json`,
   `planning/PHASE3_KICKOFF_PROMPT.md` §2, `docs/THREAT_MODEL.md`, issue #25
-  (open, candidate, code-path unconfirmed).
+  (resolved — see TRI-013 below and
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`; the retrieval-hop
+  `MAX_QUERY_CHARS` hypothesis was dismissed narrowly, and the untraced
+  LLM-prompt/conversation-store/regex paths it surfaced are tracked
+  separately at issue #54).
 - **Honesty rule applied throughout:** severity/disposition confidence is
   stated per finding. Only the 3 criticals are owner-approved confirmed
   exploits (`detect()` returned `vulnerable=True` against the real target).
@@ -32,13 +36,13 @@
 | TRI-004 | High | ACL-OFF-by-default shared dev-token bridge | confirmed-real / fix-recommended |
 | TRI-005 | High | Document-fact injection reaches answer composition (#86) | confirmed-real (surface) / exploit unconfirmed — needs multi-draw testing |
 | TRI-006 | High | Unjudged `SourceRef` relevance — 73% of verified claims (#130) | confirmed-real (measured) / accept-risk (deliberate, dated ADR) |
-| TRI-007 | Medium | Fail-soft retrieval degrades to empty list on exception (W2-F1) | confirmed-real (by design) / accept-risk — induced-failure exploit unconfirmed |
+| TRI-007 | Medium | Fail-soft retrieval degrades to empty list on exception (W2-F1) | confirmed-real (by design) / accept-risk — an induction mechanism is now demonstrated (TRI-013/#25), but whether the resulting empty list is treated more permissively downstream remains unconfirmed |
 | TRI-008 | Medium | Semantic-support judge "established facts" circularity (#111/#128) | needs-more-info / fix-recommended (add regression test) |
 | TRI-009 | Medium | Container image drift can silently serve stale code (#140) | confirmed-real (documented gap) / fix-recommended (tracked, unimplemented) |
-| TRI-010 | False Positive | "Unbounded query/upload size — DoS risk" | FALSE POSITIVE — bounded-input guards hold as designed |
+| TRI-010 | False Positive | "Unbounded query/upload size — DoS risk" | FALSE POSITIVE — bounded-input guards hold as designed; the query-length guard specifically is conditional on retrieval being enabled, per TRI-013 |
 | TRI-011 | False Positive | "Weak citation grounding enables spoofed evidence" (pixel-bbox) | FALSE POSITIVE — documented UX limitation, not an injection/verification vuln |
 | TRI-012 | False Positive | "Hardcoded localhost URL in dev config" | FALSE POSITIVE — local-appliance-only by design, not internet-reachable |
-| TRI-013 | False Positive (leaning) | Overlong `/chat` message not visibly rejected (issue #25) | FALSE-POSITIVE-leaning / needs-more-info — code path unconfirmed, single draw |
+| TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths untraced — see #54 |
 
 ---
 
@@ -223,12 +227,27 @@
   *deliberately induce* this failure path (a malformed corpus entry, a
   fact-store read engineered to raise) to suppress a citation that would
   otherwise have been checked, and whether any downstream path then treats
-  the resulting empty list more permissively than intended. No such
-  induction has been attempted or recorded yet. Kept at Medium rather than
-  High because today it is an *availability* design choice with a plausible
-  but unconfirmed integrity side-effect — escalate to High only if a probe
-  demonstrates the induced-suppression path actually degrades a verification
-  outcome.
+  the resulting empty list more permissively than intended. Kept at Medium
+  rather than High because today it is an *availability* design choice with
+  a plausible but unconfirmed integrity side-effect — escalate to High only
+  if a probe demonstrates the induced-suppression path actually degrades a
+  verification outcome.
+  **Update (TRI-013 / issue #25, this PR):** an induction mechanism for
+  this exact fail-soft path is now demonstrated — an unprivileged,
+  >2000-char `/chat` message deterministically drives
+  `_validate_query_length` to raise `RetrievalError`, which this same
+  fail-soft `except Exception` swallows, forcing `retrieved_chunks = []`
+  with no fault injection and no privileges required, **when evidence
+  retrieval is enabled (dev-easy stack)** — on a default deployment
+  `copilot_evidence_retrieval_enabled` is `False` (`config.py:200`) and
+  `_validate_query_length` is never reached at all. See TRI-013 below
+  and `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` for the full trace. This
+  is a new datum, not a disposition change: it shows *a* concrete way to
+  induce the empty-list path, but does not by itself show that the
+  resulting empty list is treated more permissively than intended
+  downstream — that question, and therefore whether this should escalate
+  to High, remains open pending the same kind of probe the original
+  disposition called for.
 
 ### TRI-008 — Semantic-support judge "established facts" circularity (issues #47/#81/#111/#128)
 
@@ -313,7 +332,20 @@
   "no known live bypass on record" is not the same claim as "proven
   unbreakable under adversarial pressure" — a direct probe (kickoff §3
   workstream 7) is still worthwhile, but the *scanner's* claim (no bound
-  exists at all) is simply false on inspection of the code.
+  exists at all) is simply false on inspection of the code. **Update
+  (TRI-013 / issue #25, this PR):** the direct probe that workstream asked
+  for is now done for the query-length guard specifically, and it
+  surfaces a config-dependence datum this disposition should carry: on
+  the *default* deployment (`copilot_evidence_retrieval_enabled=False`,
+  `config.py:200`), `_validate_query_length` is never reached from
+  `/chat` at all — the guard only fires when the dev-easy stack's
+  `docker-compose.copilot.yml:289` override turns retrieval on (see
+  TRI-013 below for the full trace). This does not change this
+  disposition: the guard is real, correctly implemented, and effective
+  whenever that code path is reached, so FALSE POSITIVE stands. It does
+  mean "bounded-input guards hold as designed" should be read as
+  conditional on that path being reachable, not as an unconditional
+  guarantee on every deployment configuration.
 
 ### TRI-011 — "Weak citation grounding enables spoofed evidence" (pixel-bbox)
 
@@ -368,36 +400,81 @@
   deferred) — worth re-checking if/when that exposure work lands, but not
   today.
 
-### TRI-013 — Overlong `/chat` message not visibly rejected (issue #25)
+### TRI-013 — Overlong `/chat` message not visibly rejected (issue #25) — RESOLVED
 
 - **Scanner claim:** "A single `/chat` message over 2000 characters returned
   a normal 200 response with no visible rejection — the `MAX_QUERY_CHARS`
   bound documented elsewhere does not appear to be enforced on this path,
   suggesting a DoS gap."
 - **Severity as scanned:** Medium (as a candidate DoS bypass).
-- **Why it leans false positive but is not yet fully dismissable:** per
-  issue #25 itself (open, label `finding:candidate`), the `MAX_QUERY_CHARS`
-  guard lives in `app/retrieval.py` on a *constructed FTS5 query* — not
-  confirmed to be on the raw chat-message path at all. A single black-box
-  draw returning 200 is consistent with at least two very different
-  explanations: (a) the guard genuinely doesn't apply to this input path
-  (a real gap), or (b) the chat message never became a large-enough
-  retrieval query to trip the guard in the first place (the guard was never
-  in scope for this probe, so "no rejection" proves nothing). Issue #25
-  explicitly states this cannot be resolved from a single black-box draw
-  and needs either (a) a white-box trace of where the chat message becomes
-  a retrieval query, or (b) a differently-shaped probe designed to reach
-  FTS5 directly.
-- **Disposition: FALSE-POSITIVE-leaning / needs-more-info — NOT a confirmed
-  finding either way.** This is deliberately included as the "insufficient
-  evidence to confirm" category the triage lab is supposed to demonstrate:
-  it would be dishonest to report this as a confirmed DoS gap (the single
-  draw doesn't establish the guard was even in scope), and it would be
-  equally dishonest to fold it into TRI-010's confirmed-false-positive
-  bucket (unlike TRI-010, the guard's applicability to *this specific path*
-  has not actually been verified in either direction). Recommend: do not
-  close as a duplicate of TRI-010; keep open exactly as issue #25 already
-  frames it, pending a white-box trace or a differently-shaped probe.
+- **Resolution (post white-box trace):** issue #25 asked for exactly one of
+  two things before this could be dispositioned: a white-box trace of where
+  the chat message becomes a retrieval query, or a differently-shaped
+  probe. The white-box trace is now done — see
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` for the full file:line call
+  chain. Summary: `app/chat.py:1194`'s `evidence_retriever(message)` passes
+  the raw, untruncated chat message verbatim through
+  `get_evidence_retriever` -> `Supervisor.handle` ->
+  `EvidenceRetrieverWorker.run` -> `retrieve_and_rerank` ->
+  `HybridRetriever.retrieve_hybrid`, whose first statement
+  (`app/retrieval.py:413`) is `_validate_query_length(query)` — the
+  `MAX_QUERY_CHARS` guard **does** sit on this exact path, and it **does**
+  fire (confirmed live-recording deployment sets
+  `COPILOT_EVIDENCE_RETRIEVAL_ENABLED: "true"`,
+  `docker/development-easy/docker-compose.copilot.yml:289`, overriding the
+  `config.py` default of `False`). The guard fires before any FTS5/embedding
+  work runs, so no unbounded computation occurs on that hop — the specific
+  FTS5/embedding-exhaustion DoS the guard exists to prevent does not
+  happen there. The 200-with-no-visible-rejection the draw observed is
+  fully explained by `app/chat.py:1193-1197`'s pre-existing, documented
+  fail-soft `except Exception` around the retrieval call (the same
+  posture as TRI-007) swallowing the guard's `RetrievalError` and
+  degrading to an empty evidence list rather than failing the turn. Note
+  the guard is reached only when `copilot_evidence_retrieval_enabled` is
+  true; it defaults to `False` (`config.py:200`) and only the dev-easy
+  stack's `docker-compose.copilot.yml:289` turns it on — on a default
+  deployment this guard is never reached at all.
+- **Disposition: FALSE POSITIVE (resolved), narrowly —
+  dismissed-with-evidence for the `MAX_QUERY_CHARS` retrieval-hop
+  hypothesis only.** Not a DoS or robustness gap distinct from the
+  already-catalogued TRI-007 fail-soft posture, on that hop, when
+  retrieval is enabled. The guard is real, reachable on the raw message
+  under that condition, and effective on that hop; only the
+  *client-visible signal* of a rejection is absent, by design, not by
+  defect. This resolution does **not** claim the `/chat` endpoint is
+  bounded in general — the same raw message also reaches the LLM prompt
+  (`planner.py:636`, resent up to `_DEFAULT_MAX_TURNS = 6` turns), the
+  unbounded, never-evicted `ConversationStore` (`chat.py:570-594`), and
+  unbounded regex scans (`detect_foreign_patient_reference`,
+  `apply_subject_check`), none of which this trace examined — see
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`'s "Out of scope for #25,
+  open" section and issue #54. Machine-checked (citations verified
+  against the pinned target when it is present, skipped otherwise) via
+  `evals/analysis/dos_input_bound_resolution.py::resolve_issue_25` and
+  its citation-verification test
+  (`tests/test_dos_input_bound_resolution.py`) — the machine-checked set
+  covers every single-line file:line citation this document and
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` make, including the
+  untraced LLM-prompt/conversation-store/regex-scan paths above, not
+  only the 11 retrieval-hop links in the traced call chain (23 total
+  entries in `TRACE_CITATIONS`, up from 21: this pass added
+  `retrieval.py:92` and `chat.py:1483`, the two citations that were
+  previously correct but unpinned).
+  Kept as its own line item (not merged into TRI-010) because — unlike
+  TRI-010's guards, which were dismissed on inspection alone — this one
+  required an actual multi-hop trace to resolve, which is now on record.
+  **Known limitation (tracked at issue #55, open):** the code fix landed
+  in this PR only suppresses auto-filing a `denial_of_service` report for
+  the exact documented probe shape; `Orchestrator._pick_next_case` never
+  emits a `case_id` in the live campaign loop, so that suppression branch
+  is unreachable live — a live campaign can still auto-file a
+  `denial_of_service` report for a novel overlong-query payload, because
+  `dos_input_bound.detect` cannot distinguish "guard absent" from "guard
+  fired then swallowed" from a 200-with-an-`answer` alone. Nothing in
+  this document should be read as claiming the fix protects the live
+  loop against that false positive. The known-FP annotation this PR adds
+  also lives only in the `ActionLog`, not on the `ExploitDB` record
+  itself (`exploit_record.schema.json` is `additionalProperties: false`).
 
 ---
 
@@ -407,10 +484,9 @@
   `>=10` requirement.
 - **All four dispositions present:** Critical/confirmed-real ×3
   (TRI-001–003), High ×3 (TRI-004–006), Medium ×3 (TRI-007–009), False
-  Positive ×4 (TRI-010–013, including the required #25 needs-more-info
-  entry) — all four dispositions (confirmed-real, fix-recommended,
-  accept-risk, FALSE-POSITIVE) are represented across the set, each with a
-  stated rationale.
+  Positive ×4 (TRI-010–013) — all four dispositions (confirmed-real,
+  fix-recommended, accept-risk, FALSE-POSITIVE) are represented across the
+  set, each with a stated rationale.
 - **Every finding has an explicit disposition + rationale:** yes, in each
   finding's "Disposition" line/paragraph above.
 - **The 3 real owner-approved criticals are cited, not reinvented:**
@@ -420,7 +496,13 @@
   injection) and TRI-006 (SourceRef relevance, population-level) are kept
   at High with explicit "surface confirmed, exploit unconfirmed" /
   "accept-risk, dated ADR" language rather than promoted to Critical on the
-  strength of the surface alone. TRI-013 (#25) is kept at
-  false-positive-leaning/needs-more-info rather than either a confirmed
-  finding or a dismissed false positive, matching the source issue's own
-  stated confidence exactly.
+  strength of the surface alone. TRI-013 (#25) was originally left at
+  false-positive-leaning/needs-more-info, matching the source issue's own
+  stated confidence at the time; it is now resolved to a firm FALSE
+  POSITIVE (dismissed-with-evidence), narrowly for the retrieval-hop
+  `MAX_QUERY_CHARS` hypothesis, once the white-box trace issue #25 asked
+  for was actually done — see `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`.
+  The LLM-prompt/conversation-store/regex paths that trace also surfaced
+  are untraced and open at issue #54, not folded into this disposition.
+  Updated here rather than left stale, since this triage lab is meant to
+  reflect current disposition confidence, not a frozen snapshot.

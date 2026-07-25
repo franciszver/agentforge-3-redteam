@@ -37,6 +37,31 @@ exploit DB's current state to find two regression shapes, both emitted as
 A ``(case_id, attempt_id)`` with an existing ``open`` record (never fixed)
 that reproduces is neither shape -- it is just a still-open exploit, not a
 regression.
+
+## Relationship to ``redteam.campaign.run_campaign``'s filing guard
+
+``run_suite_replay``'s ``db.add_record`` call above (shape 2) has never
+been, and still is not, gated by ``AttackCase.known_false_positive_ref`` --
+this module has no concept of "known false positive" at all and never
+calls ``DocumentationAgent.file_report``; it only ever writes an
+``ExploitRecord`` and returns a ``regression_detected`` error dict for a
+human/the Orchestrator to triage (this module's own docstring above). That
+write path needs nothing more than the documented normal lifecycle to
+reach it: a committed recording replaying ``vulnerable=True`` for a
+``(case_id, attempt_id)`` with no prior record, plus one ``fixed``/
+``mitigated`` record in any OTHER category (``db.set_status``, exactly as
+``docs/DEMO_SCRIPT.md``'s walkthrough and ``run_campaign``'s own
+``status_transition_occurred=True`` regression-sweep call already produce
+live) -- no manual DB seeding beyond that ordinary lifecycle is required.
+
+Since ``redteam.campaign.run_campaign`` now also records every confirmed
+("success"/"regression") outcome unconditionally (see that module's
+filing-guard comment) and only narrows ``known_false_positive_ref`` to
+skip the *report* step, the two modules converge on the same invariant
+even though they are different call sites for a different purpose: a
+confirmed finding is always written to ``ExploitDB``, never silently
+dropped. Only whether a *vuln report* gets auto-filed for it differs
+(``run_campaign`` alone makes that decision; this module never files one).
 """
 
 from __future__ import annotations
