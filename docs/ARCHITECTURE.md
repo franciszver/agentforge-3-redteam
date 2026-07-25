@@ -253,8 +253,8 @@ supply-chain-adjacent and trust-boundary failures in someone else's system.
 **Judge drift-detection + correction method (concrete definition).** The
 Judge is periodically re-scored, not just trusted to hold steady: a **fixed,
 version-controlled gold-labeled probe set** (a held-out subset of the P3.4/6
-attack cases, each with an expected verdict for each) is re-run
-through the Judge on every Orchestrator-triggered full regression sweep.
+attack cases, each with an expected verdict) is re-run through the Judge
+on every Orchestrator-triggered full regression sweep.
 (Clarification: a gold label records the **expected output of the scoring
 pipeline given that case's own `detect()`**, not necessarily a human
 judgement of exploitability. `gold-dos-guard-not-held`, for instance, keeps
