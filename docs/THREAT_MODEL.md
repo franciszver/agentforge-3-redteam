@@ -2,7 +2,8 @@
 
 - **Status:** Final for P3.3 (issue #4).
 - **Target:** `agentforge-2-evidence-agent`, pinned tag `v2.0.0`, driven locally
-  as a black box (Tailscale exposure deferred, issue #3).
+  as a black box; the deployed-URL hard gate (issue #3) was satisfied via a
+  private tailnet exposure (URL redacted, tailnet-only, no public host).
 - **Authoritative grounding source:** `planning/PHASE3_KICKOFF_PROMPT.md` in
   this repo — every attack category below cites the specific measured
   surface(s) it exploits from that document, which is itself grounded in the

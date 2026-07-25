@@ -6,10 +6,10 @@ Phase 2 Clinical Co-Pilot (target repo
 pinned at tag `v2.0.0`) and driving it as a black box, plus one real
 request/response transcript captured while doing so.
 
-**Scope note:** this is Stage 1 only — local, black-box drivability. **P3.2
-(Tailscale live exposure / a deployed-URL hard gate) is explicitly
-DEFERRED per owner decision** and tracked separately as issue #3. Nothing
-here depends on Tailscale or any non-`localhost` exposure.
+**Scope note:** this is Stage 1 only — local, black-box drivability. Nothing
+here depends on Tailscale or any non-`localhost` exposure. (P3.2, the
+deployed-URL hard gate tracked as issue #3, was tackled separately and later
+satisfied via a private tailnet exposure — see `README.md`.)
 
 Sample-size caveat: everything below is **one live draw** against the
 running dev stack, captured on 2026-07-21. It proves the mechanism works; it
@@ -219,6 +219,7 @@ loaded alongside it.
   tool-call trace + verification verdict out — without modifying the
   target repo or touching internals beyond read-only inspection.
 - **Does not prove:** anything about behavior under adversarial input
-  (out of scope for this issue), nor about live/Tailscale-exposed
-  reachability (P3.2, deferred, issue #3), nor statistical properties of
-  answer quality (this is a single draw).
+  (out of scope for this issue), nor anything about behavior under a live
+  tailnet exposure (P3.2, issue #3 — satisfied separately, see
+  `README.md`), nor statistical properties of answer quality (this is a
+  single draw).
