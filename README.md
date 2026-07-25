@@ -9,9 +9,11 @@
 > regression suite are all shipped. Three critical vulnerabilities were
 > found, Judge-confirmed, and owner-approved (`docs/vuln_reports/`); a
 > fourth, Medium-severity finding (unbounded `ConversationStore` growth,
-> issue #54) is confirmed by white-box trace + one live draw and awaits
-> human approval (`VULN-0004.pending-human-approval.json` — **not**
-> self-approved). Its attack target is the Phase 2 co-pilot
+> issue #54) is confirmed by white-box trace + one live draw and, after
+> cold review, is also owner-approved (`docs/vuln_reports/VULN-0004.json`
+> — reported upstream as
+> [agentforge-2-evidence-agent#167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167),
+> documentation only, no fix proposed). Its attack target is the Phase 2 co-pilot
 > ([agentforge-2-evidence-agent](https://github.com/franciszver/agentforge-2-evidence-agent),
 > pinned `v2.0.0`), driven **locally as a black box**; the deployed-URL
 > hard gate is satisfied via a private Tailscale tailnet (issue #3), not a

@@ -32,12 +32,12 @@ _SCHEMA_PATH = _REPO_ROOT / "contracts" / "v1" / "vuln_report.schema.json"
 # human-approval trust boundary. Extend this set only when a new finding's
 # own write-up documents why it is still open (never to silence a
 # regression).
-_KNOWN_OPEN_PENDING = {
-    # issue #54: unbounded ConversationStore growth (Medium,
-    # denial_of_service) -- see docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md and
-    # docs/TRIAGE_LAB.md TRI-014.
-    "VULN-0004",
-}
+#
+# VULN-0004 (issue #54, Medium, denial_of_service) was here pending owner
+# review; the owner approved it on 2026-07-25 (P3.33, issue #66) via
+# DocumentationAgent.approve() -- see tools/approve_vuln_0004.py and
+# test_vuln_0004_is_approved_and_filed below -- so it is no longer listed.
+_KNOWN_OPEN_PENDING: set[str] = set()
 
 
 def _schema() -> dict:
