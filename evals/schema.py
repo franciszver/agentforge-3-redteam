@@ -68,25 +68,6 @@ class AttackCase:
     bearer_token: str = "dev-smoke-test-token"
     max_draws: int = 3
     description: str = ""
-    # Documented known-false-positive annotation (default: not one). A
-    # black-box ``detect`` predicate can be structurally unable to tell
-    # "vulnerable" from "guard fired, then swallowed/degraded before the
-    # client could see it" (e.g. ``evals.cases.dos_input_bound`` -- see its
-    # module docstring). When a case's own predicate has a documented,
-    # verified false-positive shape like that, set this to a short
-    # human-readable reference (a doc path + finding id) instead of
-    # changing ``detect`` -- the predicate stays an honest black-box
-    # observer. ``redteam.campaign.run_campaign`` ALWAYS records a
-    # confirmed ("success"/"regression") outcome (``record_run`` +
-    # ``ExploitDB.add_record``), for every case, unconditionally -- this
-    # field never suppresses that write and must not be used to silently
-    # drop a target response. What it narrows is only whether the
-    # DocumentationAgent auto-files a vuln report for THIS confirmed
-    # exploit: the report is skipped ONLY when the attempt reproducing it
-    # is genuinely the documented probe (its message matches this case's
-    # own ``message``), not merely any attempt in the same category -- see
-    # that module's filing-guard comment for the exact predicate.
-    known_false_positive_ref: str | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.id.strip():

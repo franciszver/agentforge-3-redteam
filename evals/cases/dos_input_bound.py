@@ -46,13 +46,15 @@ def _looks_like_retrieval_length_error(error_event: dict) -> bool:
 # to "fix" that -- rewriting it to assume the fail-soft explanation would
 # make it silently blind to a real future regression (e.g. the guard
 # actually being removed or bypassed) that produces the exact same
-# 200-with-answer shape. See ``CASE.known_false_positive_ref`` below for
-# how the campaign *filing* pipeline (not this detector) is kept from
-# auto-reporting the known false-positive reading of this exact shape --
-# note the run is still recorded (``record_run`` + ``ExploitDB.add_record``)
-# exactly like any other confirmed outcome; only the vuln-report step is
-# skipped, and only when the reproducing attempt is this exact documented
-# probe (message-for-message), not any novel payload in this category.
+# 200-with-answer shape. Because this category is not reliably
+# machine-decidable, ``redteam.campaign.run_campaign`` (issue #55) routes
+# EVERY confirmed ``denial_of_service`` finding through the human-approval
+# gate (``DocumentationAgent.file_report(..., force_human_gate=True)``)
+# instead of trying to distinguish the false-positive shape here or at
+# filing time -- the run is still recorded (``record_run`` +
+# ``ExploitDB.add_record``) exactly like any other confirmed outcome; only
+# whether the report auto-publishes differs, and it never does for this
+# category regardless of payload.
 def detect(response: ParsedResponse) -> DetectionResult:
     error_event = response.first("error")
     if error_event is not None and _looks_like_retrieval_length_error(error_event):
@@ -87,17 +89,13 @@ CASE = AttackCase(
     # this case's "success"/`guard_not_held` outcome on a live campaign run
     # reproduces the exact shape docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md
     # and docs/TRIAGE_LAB.md TRI-013 document as dismissed-with-evidence,
-    # not a real vulnerability. `redteam.campaign.run_campaign` still
-    # records the confirmed outcome unconditionally (never drops the raw
-    # target response), but skips auto-filing a vuln report for it ONLY
-    # when the reproducing attempt's message matches this exact documented
-    # probe (``message`` above) -- a novel payload elsewhere in
-    # ``denial_of_service`` files normally. See that module's filing guard.
-    known_false_positive_ref=(
-        "docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md (issue #25, "
-        "docs/TRIAGE_LAB.md TRI-013): the guard reachable on the dev-easy "
-        "config fires before unbounded work and is swallowed by "
-        "app/chat.py's documented fail-soft handling -- not a reproducible "
-        "DoS on the retrieval hop this case probes."
-    ),
+    # not a real vulnerability -- the guard reachable on the dev-easy config
+    # fires before unbounded work and is swallowed by app/chat.py's
+    # documented fail-soft handling, not a reproducible DoS on the retrieval
+    # hop this case probes. `redteam.campaign.run_campaign` still records
+    # the confirmed outcome unconditionally (never drops the raw target
+    # response) and, since issue #55, routes every confirmed
+    # ``denial_of_service`` finding -- this documented false positive
+    # included -- through the human-approval gate rather than trying to
+    # single out this one probe shape at filing time.
 )

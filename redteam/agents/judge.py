@@ -226,9 +226,11 @@ GOLD_PROBE_SET: tuple[GoldCase, ...] = (
         # real. Do not "fix" this to expected_outcome="fail" -- that would
         # corrupt the drift baseline by asserting a false claim about what
         # detect() returns. The known-false-positive handling lives one
-        # layer up, in redteam.campaign.run_campaign's filing guard
-        # (AttackCase.known_false_positive_ref), which runs AFTER scoring
-        # and never touches this gold set.
+        # layer up, in redteam.campaign.run_campaign's category-level
+        # human-approval gate (issue #55: every confirmed
+        # denial_of_service finding is routed to pending_human_approval,
+        # not auto-filed), which runs AFTER scoring and never touches this
+        # gold set.
         gold_id="gold-dos-guard-not-held",
         case=_DOS_CASE,
         response=ParsedResponse(

@@ -101,16 +101,13 @@ REAL_CASES = [DOS_CASE, AUTHZ_CASE, DATA_EXFIL_CASE]
 # SYNTHETIC load-test-only stand-ins -- see module docstring "What's faked
 # vs. real". Reuse DOS_CASE's own ``detect`` predicate (arbitrary but
 # deterministic); never treated as real vulnerability findings anywhere
-# outside this throwaway script. ``known_false_positive_ref`` is explicitly
-# cleared -- DOS_CASE's own known-false-positive annotation (issue #25) is
-# specific to the real DOS_CASE and must not silently ride along onto
-# these unrelated synthetic categories, or their filed_reports/exploit_ids
-# counts would understate this tool's own load-test throughput.
+# outside this throwaway script. Re-categorized away from
+# ``denial_of_service`` so none of these synthetic cases are routed through
+# that category's human-approval gate (``redteam.campaign``, issue #55),
+# which would understate this tool's own load-test ``filed_reports`` count.
 _SYNTHETIC_CATEGORIES = ("prompt_injection", "state_corruption", "tool_misuse")
 SYNTHETIC_CASES = [
-    dataclasses.replace(
-        DOS_CASE, id=f"load-test-synthetic-{category}", category=category, known_false_positive_ref=None
-    )
+    dataclasses.replace(DOS_CASE, id=f"load-test-synthetic-{category}", category=category)
     for category in _SYNTHETIC_CATEGORIES
 ]
 CASES = REAL_CASES + SYNTHETIC_CASES
