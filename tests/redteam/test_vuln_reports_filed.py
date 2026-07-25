@@ -1,4 +1,6 @@
 """P3.18 (issue #37): owner approval applied to the 3 critical vuln reports.
+Extended by P3.33 (issue #66) to also cover VULN-0004 (Medium,
+denial_of_service), approved 2026-07-25.
 
 Asserts the committed ``docs/vuln_reports/`` artifacts reflect the owner's
 approval at the Documentation Agent's human-approval gate (see
