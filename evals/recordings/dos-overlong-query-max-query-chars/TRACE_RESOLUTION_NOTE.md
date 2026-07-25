@@ -17,7 +17,10 @@ swallowing the guard's `RetrievalError` rather than by the guard being
 absent or bypassed. This does **not** establish that `/chat` is bounded
 in general — the same raw message also reaches the LLM prompt, the
 conversation store, and unbounded regex scans, none of which this trace
-examined; those are tracked separately, open, at issue #54.
+examined. Those three paths are now resolved at issue #54: **confirmed-
+finding**, narrowly scoped to the conversation store's unbounded growth
+(see `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` and `docs/TRIAGE_LAB.md`
+TRI-014).
 
 Full trace, file:line citations, and final disposition
 (**dismissed-with-evidence, narrowly**):

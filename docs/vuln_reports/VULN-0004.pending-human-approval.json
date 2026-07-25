@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "VULN-0004",
+  "exploit_id": "EXP-0004",
+  "severity": "medium",
+  "clinical_impact": "The service can be degraded or made unavailable, delaying clinician access to patient information.",
+  "observed": "detect() returned vulnerable=True, label='accepted_no_bound_observed' -- status 200, normal answer, no rejection at any layer (Pydantic/FastAPI/uvicorn or llama-server). ConversationStore (chat.py:570-594) has exactly three methods (get/create/append_turn) and no eviction, TTL, or cap of any kind on conversation count or per-turn size -- confirmed by the class's own TODO(P4.2) placeholder docstring.",
+  "expected": "Either the message is rejected/truncated by application code (a length bound on ChatRequest.message), or the conversation store enforces a cap/TTL/eviction bounding total retained state.",
+  "remediation": "Enforce the documented input-size/rate bound in the actual request path (not only in comments/docs) and fail closed with a typed error, not a degraded 200.",
+  "fix_validation_status": "not_validated",
+  "requires_human_gate": true,
+  "filed_at": "2026-07-25T23:17:57Z"
+}

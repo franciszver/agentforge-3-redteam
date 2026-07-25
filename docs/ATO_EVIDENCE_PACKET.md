@@ -21,10 +21,15 @@
   `docs/TRIAGE_LAB.md` (TRI-013) dismiss the `MAX_QUERY_CHARS`/retrieval-hop
   hypothesis with evidence, narrowly — that hop is bounded when evidence
   retrieval is enabled, and unreached when it is not. It is not counted
-  among the confirmed criticals anywhere in this packet. The three
-  untraced paths (LLM prompt, conversation store, regex scans) the same
-  raw message also reaches are tracked separately and remain open at
-  issue #54 — see `docs/THREAT_MODEL.md` for that surface.
+  among the confirmed criticals anywhere in this packet. The three paths
+  that dismissal left untraced (LLM prompt, conversation store, regex
+  scans) are now resolved at issue #54 —
+  `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` and `docs/TRIAGE_LAB.md`
+  (TRI-014): a Medium-severity confirmed-finding, narrowly scoped to the
+  conversation store's unbounded growth (filed `EXP-0004`/`VULN-0004`,
+  `pending_human_approval` — not self-approved, not counted among this
+  packet's owner-approved criticals). See `docs/THREAT_MODEL.md` for that
+  surface.
 
 ---
 
@@ -314,11 +319,11 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **207 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **243 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **184 passed, 23 skipped** in CI
+present locally (confirmed at PR time); **203 passed, 40 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
-not check it out, so the 23 `TestTraceCitationsAgainstPinnedTarget` cases
+not check it out, so the 40 `TestTraceCitationsAgainstPinnedTarget` cases
 class-skip cleanly there (`tests/test_dos_input_bound_resolution.py`).
 Note this PR is not docs-only: alongside the documentation fixes in this
 round, it also changes `redteam/campaign.py`, `evals/schema.py`,
@@ -358,7 +363,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **207 passing tests (184 passed, 23 skipped in CI), no live/network/GPU
+- **243 passing tests (203 passed, 40 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -378,18 +383,18 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 207
-  with the sibling checkout present, or 184 passed / 23 skipped without
+  changes plus its expanded citation-verification test set move it to 243
+  with the sibling checkout present, or 203 passed / 40 skipped without
   it, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 207-test suite (184 in CI)
+### 5.1 The 243-test suite (203 in CI)
 
-`pytest tests/ -q` → **207 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **184 passed, 23 skipped**
+`pytest tests/ -q` → **243 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **203 passed, 40 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -435,8 +440,8 @@ above.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 207 total with the sibling checkout present,
-  or 184 passed / 23 skipped without it, §5.1).
+  the repo has since grown to 243 total with the sibling checkout present,
+  or 203 passed / 40 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -556,8 +561,8 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (207 tests with the sibling checkout
-  present / 184 passed, 23 skipped in CI, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (243 tests with the sibling checkout
+  present / 203 passed, 40 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
