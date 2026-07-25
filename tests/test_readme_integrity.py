@@ -120,8 +120,7 @@ def test_readme_status_reflects_current_state():
         "README status line still describes only the P3.0/P3.1 bootstrap "
         "milestone; the platform is complete (four agents plus the "
         "Regression Harness and Observability Layer, versioned contracts, "
-        "campaign runner, regression harness, observability, 3 "
-        "owner-approved critical findings)."
+        "a campaign runner, and 3 owner-approved critical findings)."
     )
 
     # Whitespace-normalized so a future reflow of the same sentence (e.g. a
