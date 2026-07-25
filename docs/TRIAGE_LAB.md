@@ -385,20 +385,23 @@
 - **Why it's a false positive:** the target's deployment model is a
   single-tenant local appliance, not a distributed service reachable over
   the network by design — `docs/THREAT_MODEL.md` states the target is
-  "driven locally as a black box (Tailscale exposure deferred, issue #3)"
-  and kickoff §4 states probes should assume "no probe should assume or
-  require external network access to succeed — the entire point of the
-  appliance model... is that it doesn't need one." A localhost-bound URL in
-  a dev/appliance config is not a hardcoded production dependency in this
-  architecture; it is the correct, intended binding for a system that is
-  explicitly designed to not need external network reachability. A generic
-  scanner rule written for typical multi-host web services doesn't know
-  this deployment context.
-- **Disposition: FALSE POSITIVE.** Would become a real finding only if the
-  same hardcoded-localhost pattern were found in a path meant to be
-  reachable over Tailscale/production exposure (issue #3, currently
-  deferred) — worth re-checking if/when that exposure work lands, but not
-  today.
+  "driven locally as a black box; the deployed-URL hard gate (issue #3)
+  was satisfied via a private tailnet exposure (URL redacted, tailnet-only,
+  no public host)" and kickoff §4 states probes should assume "no probe
+  should assume or require external network access to succeed — the entire
+  point of the appliance model... is that it doesn't need one." A
+  localhost-bound URL in a dev/appliance config is not a hardcoded
+  production dependency in this architecture; it is the correct, intended
+  binding for a system that is explicitly designed to not need external
+  network reachability. A generic scanner rule written for typical
+  multi-host web services doesn't know this deployment context.
+- **Disposition: FALSE POSITIVE.** The one-time private-tailnet exposure
+  that satisfied issue #3 was a gate-verification exercise, not a change to
+  the target's deployment model — it remains a single-tenant local
+  appliance, not a persistently network-reachable service. Would become a
+  real finding only if the same hardcoded-localhost pattern were found in a
+  path meant to be *persistently* reachable over the network — not the
+  case today.
 
 ### TRI-013 — Overlong `/chat` message not visibly rejected (issue #25) — RESOLVED
 
