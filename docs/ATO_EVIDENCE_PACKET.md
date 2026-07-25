@@ -323,7 +323,7 @@ that document's own text, not a real credential.
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
 present locally (confirmed at PR time); **203 passed, 40 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
-not check it out, so the 23 `TestTraceCitationsAgainstPinnedTarget` cases
+not check it out, so the 40 `TestTraceCitationsAgainstPinnedTarget` cases
 class-skip cleanly there (`tests/test_dos_input_bound_resolution.py`).
 Note this PR is not docs-only: alongside the documentation fixes in this
 round, it also changes `redteam/campaign.py`, `evals/schema.py`,

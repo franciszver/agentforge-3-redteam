@@ -91,20 +91,20 @@ def _is_quoted_historical(text: str, match_start: int) -> bool:
     return i >= 0 and text[i] == '"'
 
 
+_KINDS_TO_PATTERNS = (
+    ("pair", _PAIR_RE),
+    ("solo", _SOLO_RE),
+    ("passing_tests", _PASSING_TESTS_RE),
+)
+
+
 def _claims_in(text: str) -> list[tuple[str, tuple[int, ...]]]:
     claims: list[tuple[str, tuple[int, ...]]] = []
-    for m in _PAIR_RE.finditer(text):
-        if _is_quoted_historical(text, m.start()):
-            continue
-        claims.append(("pair", (int(m.group(1)), int(m.group(2)))))
-    for m in _SOLO_RE.finditer(text):
-        if _is_quoted_historical(text, m.start()):
-            continue
-        claims.append(("solo", (int(m.group(1)),)))
-    for m in _PASSING_TESTS_RE.finditer(text):
-        if _is_quoted_historical(text, m.start()):
-            continue
-        claims.append(("passing_tests", (int(m.group(1)),)))
+    for kind, pattern in _KINDS_TO_PATTERNS:
+        for m in pattern.finditer(text):
+            if _is_quoted_historical(text, m.start()):
+                continue
+            claims.append((kind, tuple(int(g) for g in m.groups())))
     return claims
 
 
