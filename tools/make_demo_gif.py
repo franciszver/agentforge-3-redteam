@@ -160,15 +160,17 @@ BEATS = [
     {
         "cmd": "$ pytest tests/ -q",
         "output": (
-            "........................................................................ [ 35%]\n"
-            "........................................................................ [ 70%]\n"
-            ".............................................................            [100%]\n"
-            "205 passed in 0.63s"
+            "........................................................................ [ 34%]\n"
+            "........................................................................ [ 69%]\n"
+            ".........................sssssssssssssssssssssss...............          [100%]\n"
+            "184 passed, 23 skipped in 0.45s"
         ),
         "caption": (
-            "The whole deterministic suite -- 205 tests covering every "
-            "beat above -- passes in well under a second. No live "
-            "model, no target stack required."
+            "The whole deterministic suite -- 184 tests covering every "
+            "beat above -- is fully green. The 23 skipped are citation "
+            "checks that only run with the Phase 2 target's sibling "
+            "repository checked out locally (207 pass there); either "
+            "way, no live model and no running target stack is required."
         ),
     },
 ]
