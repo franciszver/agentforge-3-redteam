@@ -38,7 +38,7 @@
 | TRI-010 | False Positive | "Unbounded query/upload size — DoS risk" | FALSE POSITIVE — bounded-input guards hold as designed |
 | TRI-011 | False Positive | "Weak citation grounding enables spoofed evidence" (pixel-bbox) | FALSE POSITIVE — documented UX limitation, not an injection/verification vuln |
 | TRI-012 | False Positive | "Hardcoded localhost URL in dev config" | FALSE POSITIVE — local-appliance-only by design, not internet-reachable |
-| TRI-013 | False Positive (leaning) | Overlong `/chat` message not visibly rejected (issue #25) | FALSE-POSITIVE-leaning / needs-more-info — code path unconfirmed, single draw |
+| TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved) — guard fires on the raw message, rejection swallowed by documented fail-soft handling |
 
 ---
 
@@ -368,36 +368,45 @@
   deferred) — worth re-checking if/when that exposure work lands, but not
   today.
 
-### TRI-013 — Overlong `/chat` message not visibly rejected (issue #25)
+### TRI-013 — Overlong `/chat` message not visibly rejected (issue #25) — RESOLVED
 
 - **Scanner claim:** "A single `/chat` message over 2000 characters returned
   a normal 200 response with no visible rejection — the `MAX_QUERY_CHARS`
   bound documented elsewhere does not appear to be enforced on this path,
   suggesting a DoS gap."
 - **Severity as scanned:** Medium (as a candidate DoS bypass).
-- **Why it leans false positive but is not yet fully dismissable:** per
-  issue #25 itself (open, label `finding:candidate`), the `MAX_QUERY_CHARS`
-  guard lives in `app/retrieval.py` on a *constructed FTS5 query* — not
-  confirmed to be on the raw chat-message path at all. A single black-box
-  draw returning 200 is consistent with at least two very different
-  explanations: (a) the guard genuinely doesn't apply to this input path
-  (a real gap), or (b) the chat message never became a large-enough
-  retrieval query to trip the guard in the first place (the guard was never
-  in scope for this probe, so "no rejection" proves nothing). Issue #25
-  explicitly states this cannot be resolved from a single black-box draw
-  and needs either (a) a white-box trace of where the chat message becomes
-  a retrieval query, or (b) a differently-shaped probe designed to reach
-  FTS5 directly.
-- **Disposition: FALSE-POSITIVE-leaning / needs-more-info — NOT a confirmed
-  finding either way.** This is deliberately included as the "insufficient
-  evidence to confirm" category the triage lab is supposed to demonstrate:
-  it would be dishonest to report this as a confirmed DoS gap (the single
-  draw doesn't establish the guard was even in scope), and it would be
-  equally dishonest to fold it into TRI-010's confirmed-false-positive
-  bucket (unlike TRI-010, the guard's applicability to *this specific path*
-  has not actually been verified in either direction). Recommend: do not
-  close as a duplicate of TRI-010; keep open exactly as issue #25 already
-  frames it, pending a white-box trace or a differently-shaped probe.
+- **Resolution (post white-box trace):** issue #25 asked for exactly one of
+  two things before this could be dispositioned: a white-box trace of where
+  the chat message becomes a retrieval query, or a differently-shaped
+  probe. The white-box trace is now done — see
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` for the full file:line call
+  chain. Summary: `app/chat.py:1194`'s `evidence_retriever(message)` passes
+  the raw, untruncated chat message verbatim through
+  `get_evidence_retriever` -> `Supervisor.handle` ->
+  `EvidenceRetrieverWorker.run` -> `retrieve_and_rerank` ->
+  `HybridRetriever.retrieve_hybrid`, whose first statement
+  (`app/retrieval.py:413`) is `_validate_query_length(query)` — the
+  `MAX_QUERY_CHARS` guard **does** sit on this exact path, and it **does**
+  fire (confirmed live-recording deployment sets
+  `COPILOT_EVIDENCE_RETRIEVAL_ENABLED: "true"`,
+  `docker/development-easy/docker-compose.copilot.yml:289`, overriding the
+  `config.py` default of `False`). The guard fires before any FTS5/embedding
+  work runs, so no unbounded computation occurs — the DoS the guard exists
+  to prevent does not happen. The 200-with-no-visible-rejection the draw
+  observed is fully explained by `app/chat.py:1193-1197`'s pre-existing,
+  documented fail-soft `except Exception` around the retrieval call (the
+  same posture as TRI-007) swallowing the guard's `RetrievalError` and
+  degrading to an empty evidence list rather than failing the turn.
+- **Disposition: FALSE POSITIVE (resolved), dismissed-with-evidence.** Not
+  a DoS or robustness gap distinct from the already-catalogued TRI-007
+  fail-soft posture. The guard is real, reachable on the raw message, and
+  effective; only the *client-visible signal* of a rejection is absent, by
+  design, not by defect. Machine-checked via
+  `evals/cases/dos_input_bound_resolution.py::resolve_issue_25` against the
+  original recorded draw (`tests/test_dos_input_bound_resolution.py`).
+  Kept as its own line item (not merged into TRI-010) because — unlike
+  TRI-010's guards, which were dismissed on inspection alone — this one
+  required an actual multi-hop trace to resolve, which is now on record.
 
 ---
 
@@ -407,10 +416,9 @@
   `>=10` requirement.
 - **All four dispositions present:** Critical/confirmed-real ×3
   (TRI-001–003), High ×3 (TRI-004–006), Medium ×3 (TRI-007–009), False
-  Positive ×4 (TRI-010–013, including the required #25 needs-more-info
-  entry) — all four dispositions (confirmed-real, fix-recommended,
-  accept-risk, FALSE-POSITIVE) are represented across the set, each with a
-  stated rationale.
+  Positive ×4 (TRI-010–013) — all four dispositions (confirmed-real,
+  fix-recommended, accept-risk, FALSE-POSITIVE) are represented across the
+  set, each with a stated rationale.
 - **Every finding has an explicit disposition + rationale:** yes, in each
   finding's "Disposition" line/paragraph above.
 - **The 3 real owner-approved criticals are cited, not reinvented:**
@@ -420,7 +428,11 @@
   injection) and TRI-006 (SourceRef relevance, population-level) are kept
   at High with explicit "surface confirmed, exploit unconfirmed" /
   "accept-risk, dated ADR" language rather than promoted to Critical on the
-  strength of the surface alone. TRI-013 (#25) is kept at
-  false-positive-leaning/needs-more-info rather than either a confirmed
-  finding or a dismissed false positive, matching the source issue's own
-  stated confidence exactly.
+  strength of the surface alone. TRI-013 (#25) was originally left at
+  false-positive-leaning/needs-more-info, matching the source issue's own
+  stated confidence at the time; it is now resolved to a firm FALSE
+  POSITIVE (dismissed-with-evidence) once the white-box trace issue #25
+  asked for was actually done — see
+  `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`. Updated here rather than
+  left stale, since this triage lab is meant to reflect current disposition
+  confidence, not a frozen snapshot.
