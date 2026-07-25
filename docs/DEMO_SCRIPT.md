@@ -18,12 +18,12 @@ evidence table this script complements with runnable commands.
   `model_client` (`redteam/agents/red_team.py`), always called with
   `num_gpu: 0` (CPU-only; see that module's docstring). Run `nvidia-smi`
   immediately before and after any live call and confirm VRAM stays flat.
-- `pytest tests/ -q` green (**177 passed**, deterministic — no live/network/
+- `pytest tests/ -q` green (**205 passed**, deterministic — no live/network/
   GPU call in the default suite; confirmed while writing this doc).
 
 ```
 $ pytest tests/ -q
-177 passed in 0.35s
+205 passed in 0.63s
 ```
 
 ---
@@ -321,9 +321,9 @@ here for completeness:
 ## CI
 
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
-`python -m pytest tests/ -q` (177 passed) — on every push to `main` and on
+`python -m pytest tests/ -q` (205 passed) — on every push to `main` and on
 every pull request. Live-model and target-stack runs remain manual, outside
 CI: every command in this script was run locally against the dev stack
-while writing this doc. `pytest tests/ -q` (177 passed) is still the
+while writing this doc. `pytest tests/ -q` (205 passed) is still the
 reproducibility bar — re-run it after pulling this branch to confirm
 nothing here has drifted.

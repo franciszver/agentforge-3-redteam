@@ -160,14 +160,14 @@ BEATS = [
     {
         "cmd": "$ pytest tests/ -q",
         "output": (
-            "........................................................................ [ 40%]\n"
-            "........................................................................ [ 81%]\n"
-            ".................................                                        [100%]\n"
-            "177 passed in 0.36s"
+            "........................................................................ [ 35%]\n"
+            "........................................................................ [ 70%]\n"
+            ".............................................................            [100%]\n"
+            "205 passed in 0.63s"
         ),
         "caption": (
-            "The whole deterministic suite -- 177 tests covering every "
-            "beat above -- passes in well under half a second. No live "
+            "The whole deterministic suite -- 205 tests covering every "
+            "beat above -- passes in well under a second. No live "
             "model, no target stack required."
         ),
     },

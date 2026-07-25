@@ -314,8 +314,12 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **177 passed** (confirmed at PR
-time, unchanged by this docs-only PR).
+`pytest tests/ -q` re-run for this packet: **205 passed** (confirmed at PR
+time). Note this PR is not docs-only: alongside the documentation fixes
+in this round, it also changes `redteam/campaign.py`, `evals/schema.py`,
+`evals/cases/dos_input_bound.py`, `redteam/harness/regression.py`, and
+`tools/load_test_replay.py` — the count above reflects the suite with
+those changes included, not a pre-change baseline.
 
 ### 4.2 Process-evidence posture (not re-run here, described honestly)
 
@@ -349,7 +353,7 @@ time, unchanged by this docs-only PR).
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **177 passing tests, no live/network/GPU call in the default suite.**
+- **205 passing tests, no live/network/GPU call in the default suite.**
   Every test file under `tests/` (`tests/contracts/`, `tests/redteam/`,
   `tests/test_cases.py`, `tests/test_case_sourceref_relevance.py`,
   `tests/test_runner_sse.py`, `tests/test_schema.py`) uses fake
@@ -358,18 +362,20 @@ time, unchanged by this docs-only PR).
   the deterministic test suite never makes a live call"). Live-only tools
   (`tools/run_campaign.py`, `tools/redteam_live_smoke.py`,
   `tools/load_test_replay.py`) are deliberately kept out of `tests/` and
-  unnamed `test_*` so `pytest tests/ -q` never collects them — confirmed by
-  the 177-count staying stable across PRs that add live-tool scripts (PR
-  #40's own test plan: "177 passed (unchanged; no test-suite-relevant code
-  touched)").
+  unnamed `test_*` so `pytest tests/ -q` never collects them — the count
+  has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
+  own test plan: "177 passed (unchanged; no test-suite-relevant code
+  touched)" at that point in the repo's history; this PR's own platform
+  changes plus its expanded citation-verification test set move it to
+  205, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 177-test suite
+### 5.1 The 205-test suite
 
-`pytest tests/ -q` → **177 passed**, re-confirmed for this packet (§4.1).
+`pytest tests/ -q` → **205 passed**, re-confirmed for this packet (§4.1).
 Organized across `tests/contracts/` (schema + uniqueness constraints),
 `tests/redteam/` (the six agents + campaign runner + harness), and root-level
 case/schema/runner tests. Every test is deterministic — fake model/target
@@ -392,9 +398,10 @@ reading each file directly (§2.1 above quotes the exact fields). A fourth
 recorded set exists for a non-critical, DoS-adjacent probe
 (`evals/recordings/dos-overlong-query-max-query-chars/`, 1 draw) — this is
 the bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-013
-(false positive, resolved narrowly by white-box trace, issue #25; not
-TRI-010, which covers the separately-documented ingestion/upload-size
-guards), not a fourth critical, and is not conflated with the three
+(false positive, resolved narrowly by white-box trace, issue #25; TRI-010
+dismissed these same query-size guards on inspection alone, without a
+trace — TRI-013 is the traced probe of that same `MAX_QUERY_CHARS`
+guard), not a fourth critical, and is not conflated with the three
 above.
 
 ### 5.3 Live-campaign + smoke evidence
@@ -411,7 +418,7 @@ above.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 177 total, §5.1).
+  the repo has since grown to 205 total, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -531,7 +538,7 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (177 tests, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (205 tests, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
