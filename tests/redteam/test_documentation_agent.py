@@ -93,6 +93,43 @@ def test_non_critical_severity_is_auto_filed():
     assert agent.get_pending("EXP-0002") is None
 
 
+def test_force_human_gate_overrides_a_non_critical_severity(tmp_path):
+    """``force_human_gate=True`` (issue #55) gates a report to
+    ``pending_human_approval`` even though its category's severity is
+    ``medium`` (not ``critical``) -- the mechanism ``redteam.campaign
+    .run_campaign`` uses to route every confirmed ``denial_of_service``
+    finding through human triage. Severity itself is untouched."""
+    agent = DocumentationAgent()
+    result = agent.file_report(NON_CRITICAL_EXPLOIT, force_human_gate=True)
+
+    assert result["severity"] == "medium"
+    assert result["requires_human_gate"] is True
+    assert result["status"] == "pending_human_approval"
+    assert agent.get_pending("EXP-0002") is not None
+    assert agent.get_filed("EXP-0002") is None
+    assert agent.all_filed() == []
+
+
+def test_force_human_gate_false_leaves_non_critical_auto_filed():
+    """The default (``force_human_gate=False``) must not change any
+    existing non-critical auto-file behavior -- a regression guard for the
+    OR added to ``requires_human_gate``."""
+    agent = DocumentationAgent()
+    result = agent.file_report(NON_CRITICAL_EXPLOIT, force_human_gate=False)
+
+    assert result["requires_human_gate"] is False
+    assert result["status"] == "filed"
+
+
+def test_force_human_gate_does_not_lower_a_critical_gate():
+    """``force_human_gate`` only ORs in -- passing ``False`` on a critical
+    exploit must not somehow bypass the severity-derived gate (there is no
+    code path that would, but this pins the invariant explicitly)."""
+    report = build_vuln_report(CRITICAL_EXPLOIT, force_human_gate=False)
+    assert report["severity"] == "critical"
+    assert report["requires_human_gate"] is True
+
+
 def test_approving_a_pending_critical_report_files_it():
     agent = DocumentationAgent()
     agent.file_report(CRITICAL_EXPLOIT)
