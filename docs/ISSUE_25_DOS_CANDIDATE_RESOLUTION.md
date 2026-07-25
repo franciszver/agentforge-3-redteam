@@ -156,7 +156,7 @@ Per the project's rules of engagement, this is recorded as a narrow
 dismissal, not left ambiguous and not stretched toward either "confirmed"
 or "no exposure."
 
-## Out of scope for #25, open — tracked at issue #54
+## Out of scope for #25 — traced to completion at issue #54 (resolved)
 
 The white-box trace above only follows `message` down the evidence-
 retrieval hop. The same raw, unmodified `ChatRequest.message`
@@ -189,13 +189,17 @@ also demonstrably reaches at least three other paths that this PR does
    `apply_subject_check(result, question=message, ...)` — both scan the
    raw message with regex/pattern matching, unbounded by length.
 
-**None of these three paths are asserted to be exploitable.** They are
-untraced — this document takes no position on whether any of them is
-bounded, rate-limited elsewhere, or actually reachable at a scale that
-matters. That is exactly the gap issue **#54** now tracks ("FINDING
-(candidate, untraced): `/chat` message is unbounded on the LLM-prompt and
-conversation-store paths"). Do not read the "dismissed" verdict above as
-covering these three paths — it does not.
+**None of these three paths are asserted to be exploitable by THIS
+document.** At the time this resolution was written, this document took no
+position on whether any of them was bounded, rate-limited elsewhere, or
+actually reachable at a scale that matters — that was exactly the gap
+issue **#54** was filed to track ("FINDING (candidate, untraced): `/chat`
+message is unbounded on the LLM-prompt and conversation-store paths").
+Issue #54 has since resolved that gap (**confirmed-finding**, narrowly
+scoped to the conversation store's unbounded growth — see
+`docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`); do not read the "dismissed"
+verdict above as covering these three paths — it never did, and #54's own
+resolution now speaks to them directly.
 
 ## Escalation
 
@@ -206,9 +210,10 @@ live probe would be needed to settle on that hop — every link in that
 chain is a direct, unconditional function call on the literal
 `message`/`query` value, with no branch that could plausibly skip or
 transform it before `retrieve_hybrid`. No live target call was made for
-this resolution. The three paths in "Out of scope for #25, open" above
-are a *separate* escalation, already filed as issue #54 — resolving them
-is out of scope for this PR.
+this resolution. The three paths in "Out of scope for #25 — traced to
+completion at issue #54 (resolved)" above were a *separate* escalation,
+filed as issue #54 and since resolved there (confirmed-finding) —
+resolving them was out of scope for this PR.
 
 ## Artifacts
 

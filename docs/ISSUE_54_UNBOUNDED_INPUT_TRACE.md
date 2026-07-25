@@ -256,6 +256,22 @@ confirmed `denial_of_service` finding is routed through human approval
 regardless of severity. **This report is left `pending_human_approval` —
 it was NOT self-approved.**
 
+**Why `medium`, stated honestly in both directions (reachability):** the
+`agent` container's port 8000 is **not published** to the host in the
+dev-easy compose overlay — its service definition has no `ports:` entry,
+same as every other internal-only service (`evals/runner.py:1-10`
+documents this directly: driving `/chat` at all requires `docker exec`
+into the container, not a host-reachable socket). Exploiting this finding
+therefore needs the same internal-network reach as VULN-0001..0003 — it is
+not exposed to an arbitrary external caller by itself, which argues against
+a higher severity than `medium`. Conversely, VULN-0001 (any non-empty
+bearer token is accepted — see that report) means bearer-token auth does
+**not** gate this path once network reach is available: an attacker who
+can reach the internal network at all, even with a garbage token, can drive
+`/chat` and grow the store, so auth is not a mitigating control here either.
+Neither fact is used to inflate or deflate the `medium` rating above — they
+are stated so the rating is legible against the facts, not merely asserted.
+
 ## Artifacts
 
 - Trace + resolution logic (importable, tested):

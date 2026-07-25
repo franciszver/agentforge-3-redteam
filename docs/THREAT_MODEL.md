@@ -162,6 +162,16 @@ as an availability one. The kickoff's own framing is that these "should
 hold, per the code and its own tests" — exactly the class of claim a red
 team exists to independently confirm rather than take on faith.
 
+**Update (issue #54, resolved):** those three guards are not the only
+`/chat`-reachable DoS surface. `ChatRequest.message` has no length bound
+anywhere in application code, and the same raw message permanently grows
+the process-global `ConversationStore` (`chat.py:570-594`) with no
+eviction, cap, or TTL of any kind — a distinct, confirmed-finding surface
+from the three guards above, narrowly scoped to that unbounded resource
+growth. See `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` for the full white-box
+trace and `docs/TRIAGE_LAB.md` TRI-014 for the triage disposition (Medium,
+`pending_human_approval`, filed `EXP-0004`/`VULN-0004`).
+
 ### 2.6 Identity / authorization exploitation
 
 Kickoff §2(g) is the authoritative surface: two independently implemented

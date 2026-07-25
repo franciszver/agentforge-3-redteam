@@ -108,8 +108,10 @@ documented, deliberate fail-soft error handling -- not by the guard being
 absent, bypassed, or reachable-but-ineffective. This is NOT a claim that
 no reproducible DoS or robustness gap exists on ``/chat`` at all -- only
 that the specific retrieval-hop hypothesis issue #25 posed is dismissed.
-The LLM-prompt, conversation-store, and regex-scan paths remain untraced
-and open at issue #54.
+The LLM-prompt, conversation-store, and regex-scan paths were, at the time
+this resolution was written, untraced and open at issue #54 -- ``resolve_issue_54``
+below has since traced all three to completion (confirmed-finding, see its
+own docstring); issue #54 is resolved, not open.
 """
 
 from __future__ import annotations
@@ -428,8 +430,9 @@ def resolve_issue_25(recording: dict[str, Any]) -> IssueResolution:
             "dismissal of the retrieval-hop MAX_QUERY_CHARS hypothesis "
             "only -- it does not establish /chat is bounded in general; "
             "the LLM-prompt, conversation-store, and regex-scan paths the "
-            "same raw message also reaches are untraced and open at "
-            "issue #54."
+            "same raw message also reaches were out of scope for this "
+            "narrow resolution and are traced separately, to completion, "
+            "by resolve_issue_54 (issue #54, resolved: confirmed-finding)."
         ),
     )
 

@@ -14,9 +14,10 @@
   `planning/PHASE3_KICKOFF_PROMPT.md` §2, `docs/THREAT_MODEL.md`, issue #25
   (resolved — see TRI-013 below and
   `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`; the retrieval-hop
-  `MAX_QUERY_CHARS` hypothesis was dismissed narrowly, and the untraced
-  LLM-prompt/conversation-store/regex paths it surfaced are tracked
-  separately at issue #54).
+  `MAX_QUERY_CHARS` hypothesis was dismissed narrowly, and the
+  LLM-prompt/conversation-store/regex paths it left untraced were traced
+  to completion separately at issue #54 — resolved: confirmed-finding, see
+  TRI-014 below and `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`).
 - **Honesty rule applied throughout:** severity/disposition confidence is
   stated per finding. Only the 3 criticals are owner-approved confirmed
   exploits (`detect()` returned `vulnerable=True` against the real target).
@@ -42,7 +43,7 @@
 | TRI-010 | False Positive | "Unbounded query/upload size — DoS risk" | FALSE POSITIVE — bounded-input guards hold as designed; the query-length guard specifically is conditional on retrieval being enabled, per TRI-013 |
 | TRI-011 | False Positive | "Weak citation grounding enables spoofed evidence" (pixel-bbox) | FALSE POSITIVE — documented UX limitation, not an injection/verification vuln |
 | TRI-012 | False Positive | "Hardcoded localhost URL in dev config" | FALSE POSITIVE — local-appliance-only by design, not internet-reachable |
-| TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths untraced — see #54 |
+| TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths this resolution left untraced were traced to completion at #54 — see TRI-014 |
 | TRI-014 | Medium | Unbounded `ConversationStore` growth (issue #54) | confirmed-real (structural, code-verified) / fix-recommended — no length bound on `ChatRequest.message` anywhere in the stack, and `ConversationStore` never evicts; filed `EXP-0004`/`VULN-0004`, `pending_human_approval` |
 
 ---
