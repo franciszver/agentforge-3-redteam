@@ -87,7 +87,7 @@ posture.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 #: One (file, line, quote) citation per link in the traced call chain,
@@ -157,13 +157,13 @@ class IssueResolution:
     guard_fires_before_unbounded_work: bool
     rejection_surfaced_to_client: bool
     rationale: str
-    citations: tuple[tuple[str, int, str], ...] = field(default=TRACE_CITATIONS)
+    citations: tuple[tuple[str, int, str], ...] = TRACE_CITATIONS
 
 
 def resolve_issue_25(recording: dict[str, Any]) -> IssueResolution:
     """Combine the white-box trace with the recorded draw's own observed
-    facts (status 200, no ``error`` event, an ``answer`` event present) to
-    produce the final, evidence-backed disposition.
+    facts (status 200, no ``error`` event) to produce the final,
+    evidence-backed disposition.
 
     Deliberately does NOT just trust the recording's own naive
     ``detection_label``/``vulnerable`` fields (``guard_not_held`` / ``True``)
