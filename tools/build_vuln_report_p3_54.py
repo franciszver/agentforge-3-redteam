@@ -50,6 +50,8 @@ import json
 import sys
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from redteam.agents.documentation import (  # noqa: E402
@@ -60,6 +62,7 @@ from redteam.harness.db import now_iso  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _REPORTS_DIR = _REPO_ROOT / "docs" / "vuln_reports"
+_EXPLOIT_RECORD_SCHEMA_PATH = _REPO_ROOT / "contracts" / "v1" / "exploit_record.schema.json"
 _RECORDING_PATH = (
     _REPO_ROOT
     / "evals"
@@ -127,6 +130,20 @@ def main() -> int:
 
     documentation = DocumentationAgent(reports_dir=None)  # this script does its own explicit write below
     record = _build_exploit_record()
+
+    # Pre-write data-quality gate (mirrors redteam/harness/db.py's ExploitDB
+    # pattern): DocumentationAgent.file_report only validates the OUTPUT
+    # vuln_report, never the input exploit_record, so a script bypassing
+    # ExploitDB (as this one does -- there is no persistent DB to add to)
+    # must validate the record itself, or a future edit here could silently
+    # produce a contract-invalid exploit_record with nothing to catch it.
+    schema = json.loads(_EXPLOIT_RECORD_SCHEMA_PATH.read_text(encoding="utf-8"))
+    errors = list(Draft202012Validator(schema).iter_errors(record))
+    if errors:
+        for error in errors:
+            print(f"exploit_record schema violation: {list(error.path)}: {error.message}", file=sys.stderr)
+        return 1
+
     report = documentation.file_report(
         record, force_human_gate=record["category"] in FORCE_HUMAN_GATE_CATEGORIES
     )

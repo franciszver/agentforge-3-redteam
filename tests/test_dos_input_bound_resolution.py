@@ -150,6 +150,10 @@ def test_resolve_issue_54_is_a_confirmed_finding_given_the_real_draw(issue_54_dr
     # engine -- rejected or truncated the oversized message.
     assert resolution.message_length_bound_exists_anywhere is False
     assert resolution.llm_prompt_path_bounded_by_app_code is False
+    # ...but only operationally, by the deployed inference engine's fixed
+    # --ctx-size, not by any application-level defense -- do not let this
+    # collapse into "the LLM-prompt path is safe."
+    assert resolution.llm_prompt_path_bounded_operationally is True
     assert resolution.conversation_store_has_eviction is False
     # The regex-scan path is unbounded-input but linear-time, not itself a
     # distinct amplification primitive -- do not overclaim it.
