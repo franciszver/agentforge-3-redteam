@@ -39,7 +39,7 @@
 | TRI-007 | Medium | Fail-soft retrieval degrades to empty list on exception (W2-F1) | confirmed-real (by design) / accept-risk — an induction mechanism is now demonstrated (TRI-013/#25), but whether the resulting empty list is treated more permissively downstream remains unconfirmed |
 | TRI-008 | Medium | Semantic-support judge "established facts" circularity (#111/#128) | needs-more-info / fix-recommended (add regression test) |
 | TRI-009 | Medium | Container image drift can silently serve stale code (#140) | confirmed-real (documented gap) / fix-recommended (tracked, unimplemented) |
-| TRI-010 | False Positive | "Unbounded query/upload size — DoS risk" | FALSE POSITIVE — bounded-input guards hold as designed |
+| TRI-010 | False Positive | "Unbounded query/upload size — DoS risk" | FALSE POSITIVE — bounded-input guards hold as designed; the query-length guard specifically is conditional on retrieval being enabled, per TRI-013 |
 | TRI-011 | False Positive | "Weak citation grounding enables spoofed evidence" (pixel-bbox) | FALSE POSITIVE — documented UX limitation, not an injection/verification vuln |
 | TRI-012 | False Positive | "Hardcoded localhost URL in dev config" | FALSE POSITIVE — local-appliance-only by design, not internet-reachable |
 | TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths untraced — see #54 |
@@ -332,7 +332,20 @@
   "no known live bypass on record" is not the same claim as "proven
   unbreakable under adversarial pressure" — a direct probe (kickoff §3
   workstream 7) is still worthwhile, but the *scanner's* claim (no bound
-  exists at all) is simply false on inspection of the code.
+  exists at all) is simply false on inspection of the code. **Update
+  (TRI-013 / issue #25, this PR):** the direct probe that workstream asked
+  for is now done for the query-length guard specifically, and it
+  surfaces a config-dependence datum this disposition should carry: on
+  the *default* deployment (`copilot_evidence_retrieval_enabled=False`,
+  `config.py:200`), `_validate_query_length` is never reached from
+  `/chat` at all — the guard only fires when the dev-easy stack's
+  `docker-compose.copilot.yml:289` override turns retrieval on (see
+  TRI-013 below for the full trace). This does not change this
+  disposition: the guard is real, correctly implemented, and effective
+  whenever that code path is reached, so FALSE POSITIVE stands. It does
+  mean "bounded-input guards hold as designed" should be read as
+  conditional on that path being reachable, not as an unconditional
+  guarantee on every deployment configuration.
 
 ### TRI-011 — "Weak citation grounding enables spoofed evidence" (pixel-bbox)
 
@@ -440,10 +453,13 @@
   `evals/analysis/dos_input_bound_resolution.py::resolve_issue_25` and
   its citation-verification test
   (`tests/test_dos_input_bound_resolution.py`) — the machine-checked set
-  covers every file:line citation this document and
+  covers every single-line file:line citation this document and
   `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md` make, including the
   untraced LLM-prompt/conversation-store/regex-scan paths above, not
-  only the 10 retrieval-hop links in the traced call chain.
+  only the 11 retrieval-hop links in the traced call chain (23 total
+  entries in `TRACE_CITATIONS`, up from 21: this pass added
+  `retrieval.py:92` and `chat.py:1483`, the two citations that were
+  previously correct but unpinned).
   Kept as its own line item (not merged into TRI-010) because — unlike
   TRI-010's guards, which were dismissed on inspection alone — this one
   required an actual multi-hop trace to resolve, which is now on record.

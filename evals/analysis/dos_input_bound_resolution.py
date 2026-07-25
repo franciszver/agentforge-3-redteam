@@ -160,6 +160,11 @@ TRACE_CITATIONS: tuple[tuple[str, int, str], ...] = (
         73,
         "MAX_QUERY_CHARS = 2000",
     ),
+    (
+        "services/copilot-agent/app/retrieval.py",
+        92,
+        "if len(query) > MAX_QUERY_CHARS:",
+    ),
     # The following entries extend coverage beyond the retrieval-hop trace
     # above to every OTHER file:line citation the narrative docs
     # (`docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`, `docs/TRIAGE_LAB.md`)
@@ -196,6 +201,11 @@ TRACE_CITATIONS: tuple[tuple[str, int, str], ...] = (
         "services/copilot-agent/app/chat.py",
         1357,
         "question=message,",
+    ),
+    (
+        "services/copilot-agent/app/chat.py",
+        1483,
+        "request.message,",
     ),
     (
         "services/copilot-agent/app/chat.py",
