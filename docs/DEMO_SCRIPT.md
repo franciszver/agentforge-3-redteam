@@ -318,9 +318,12 @@ here for completeness:
   `"requires_human_gate": true` / `"approved_by": "owner"`), never a loop
   restart.
 
-## No CI
+## CI
 
-This repo has no CI pipeline configured; every command in this script was
-run locally against the dev stack while writing this doc. `pytest tests/ -q`
-(177 passed) is the reproducibility bar — re-run it after pulling this
-branch to confirm nothing here has drifted.
+CI (`.github/workflows/ci.yml`) runs the deterministic suite —
+`python -m pytest tests/ -q` (177 passed) — on every push to `main` and on
+every pull request. Live-model and target-stack runs remain manual, outside
+CI: every command in this script was run locally against the dev stack
+while writing this doc. `pytest tests/ -q` (177 passed) is still the
+reproducibility bar — re-run it after pulling this branch to confirm
+nothing here has drifted.
