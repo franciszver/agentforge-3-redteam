@@ -194,9 +194,9 @@ def test_release_notes_scopes_upstream_167_to_vuln_0004_only():
     upstream issue exists for VULN-0001/0002/0003. The notes must say so
     explicitly, not imply all four were reported as #167."""
     text = _text()
-    assert "No upstream issue was filed for VULN-0001, VULN-0002, or\nVULN-0003" in text or (
-        "No upstream issue was filed for VULN-0001" in text and "VULN-0003" in text
-    )
+    normalized = " ".join(text.split())
+    assert "No upstream issue was filed for VULN-0001" in normalized
+    assert "VULN-0003" in normalized.split("No upstream issue was filed for VULN-0001", 1)[1][:60]
 
 
 def test_release_notes_states_draw_counts_and_vuln_0004_single_draw():
@@ -216,7 +216,7 @@ def test_release_notes_does_not_imply_approve_was_bypassed():
     notes must not imply the artifact was hand-made or approval skipped."""
     text = _text()
     assert "DocumentationAgent.approve()" in text
-    assert "not from\n  hand-editing" in text or "not from hand-editing" in text or "hand-editing" in text
+    assert "hand-editing" in text
 
 
 def test_release_notes_does_not_carry_status_draft_header():
