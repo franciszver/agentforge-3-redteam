@@ -17,6 +17,15 @@ This guard is derived from the filesystem (every directory under
 than a fixed count, so it self-updates as recordings/reports are added,
 and is scoped to the §5.2 section body specifically so it doesn't
 false-positive on unrelated "VULN-000N" mentions elsewhere in the doc.
+
+Cold-review fix (issue #68, Part C): the fix for Part B's join-key claim
+introduced two NEW false claims in the same docstring -- that the durable
+evidence is "named directly on each report" (no committed report contains
+"evals/recordings" or "recording" at all), and that ``observed``/
+``expected`` "already carry the repro steps a reader needs" (they carry
+Judge.detect()'s detection signal, not an endpoint/payload/token/case
+module). Part C below guards both, plus a ground-truth check against the
+actual report files so the claim is checked, not just the wording.
 """
 
 from __future__ import annotations
@@ -121,3 +130,75 @@ def test_documentation_agent_docstring_does_not_claim_a_resolvable_exploit_db():
         "':memory:') -- this claims a resolvable artifact that does not "
         f"exist:\n{violations}"
     )
+
+
+# --- Part C (issue #68 cold review): a filed report must not be claimed to
+# name/carry its own evidence or repro steps -------------------------------
+#
+# The first Part B fix replaced the "join key ... exploit DB" claim with two
+# NEW false claims: that the durable evidence is "named directly on each
+# report" (no report contains "evals/recordings" or "recording" -- the
+# report-to-recording mapping lives only in
+# docs/ATO_EVIDENCE_PACKET.md §5.2, not on the report itself), and that
+# observed/expected "already carry the repro steps a reader needs" (they
+# carry Judge.detect()'s detection signal -- a label/message string, not an
+# endpoint, payload, token, or case module). Both claims are checked
+# directly against the four committed reports below, not just guarded by
+# regex, so this test fails if a future edit reintroduces either claim OR
+# a report actually starts naming its own recording.
+
+_SELF_NAMED_EVIDENCE_RE = re.compile(
+    r"evidence named directly on (each|the|its own) report",
+    re.IGNORECASE,
+)
+_UNQUALIFIED_REPRO_STEPS_RE = re.compile(
+    r"carr(?:y|ies).{0,80}repro steps",
+    re.IGNORECASE | re.DOTALL,
+)
+_NEGATION_NEARBY_RE = re.compile(
+    r"\bnor\b|\bnot\b|\bn't\b|\bnone\b|\bcannot\b|\bno report\b",
+    re.IGNORECASE,
+)
+_NEGATION_WINDOW = 60
+
+
+def test_documentation_agent_docstring_does_not_claim_reports_self_document_evidence():
+    text = (REPO_ROOT / "redteam" / "agents" / "documentation.py").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+
+    self_named_violations = [m.group(0) for m in _SELF_NAMED_EVIDENCE_RE.finditer(normalized)]
+    assert not self_named_violations, (
+        "redteam/agents/documentation.py claims the durable evidence is "
+        "'named directly on each report' -- no report under "
+        "docs/vuln_reports/ contains 'evals/recordings' or 'recording' "
+        "(the schema forbids a recording_ref field entirely); the "
+        f"report-to-recording mapping lives only in ATO §5.2:\n{self_named_violations}"
+    )
+
+    repro_steps_violations = []
+    for match in _UNQUALIFIED_REPRO_STEPS_RE.finditer(normalized):
+        start = max(0, match.start() - _NEGATION_WINDOW)
+        window = normalized[start:match.end()]
+        if not _NEGATION_NEARBY_RE.search(window):
+            repro_steps_violations.append(match.group(0))
+    assert not repro_steps_violations, (
+        "redteam/agents/documentation.py claims observed/expected 'carry "
+        "the repro steps' without qualification -- VULN-0001.json's "
+        "observed/expected name no endpoint, payload, token, or case "
+        "module; they carry Judge.detect()'s detection signal, not repro "
+        f"steps:\n{repro_steps_violations}"
+    )
+
+
+def test_filed_reports_do_not_name_their_own_recording():
+    """Ground-truth check backing the two regexes above: no committed
+    report actually contains a recording pointer, so any future claim that
+    it does is checkable against real files, not just docstring wording."""
+    reports_dir = REPO_ROOT / "docs" / "vuln_reports"
+    for report_path in sorted(reports_dir.glob("VULN-*.json")):
+        text = report_path.read_text(encoding="utf-8")
+        assert "evals/recordings" not in text and "recording" not in text.lower(), (
+            f"{report_path.name} now names its own recording -- update "
+            "redteam/agents/documentation.py's docstring, this claim is no "
+            "longer false"
+        )

@@ -90,11 +90,19 @@ a committed, on-disk database, so there is no persisted exploit DB an
 ``ExploitDB``'s own default (``redteam/harness/db.py``). What makes a
 filed report reproducible by an engineer with zero platform context is
 NOT the ``exploit_id`` resolving to a committed database -- it is the
-durable, already-committed evidence named directly on each report and in
-``docs/ATO_EVIDENCE_PACKET.md`` §5.2: the raw live transcript(s) under
-``evals/recordings/<probe-name>/`` and the filed report JSON itself under
-``docs/vuln_reports/<report_id>.json``, whose ``observed``/``expected``
-fields already carry the repro steps a reader needs.
+durable, already-committed evidence under ``evals/recordings/<probe-name>/``.
+**No report names its own evidence** -- ``vuln_report.schema.json`` is
+``additionalProperties: false`` with no ``recording_ref`` field (see
+above), so a filed ``docs/vuln_reports/<report_id>.json`` cannot and does
+not point at its recording; that report-to-recording mapping lives ONLY
+in ``docs/ATO_EVIDENCE_PACKET.md`` §5.2, which a reader must consult
+separately. Nor do ``observed``/``expected`` carry repro steps -- they
+carry the *detection signal* ``Judge.detect()`` produced (e.g.
+``"detect() returned vulnerable=True, label='garbage_token_accepted'"``),
+not an endpoint, payload, token, or case module; the actual runnable
+repro is the paired ``evals/cases/<case>.py`` detection logic plus the
+committed recording JSON under ``evals/recordings/<probe-name>/`` that
+§5.2 maps the report to.
 """
 
 from __future__ import annotations
