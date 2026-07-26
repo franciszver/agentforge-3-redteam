@@ -140,13 +140,28 @@ def main() -> int:
     assert record["exploit_id"] == _EXPLOIT_ID
 
     documentation = DocumentationAgent(reports_dir=_REPORTS_DIR)
-    pre_approval = _file_pending(
-        documentation,
-        record,
-        filed_at=original_filed_at,
-        force_human_gate=True,  # denial_of_service is already unconditionally
-        # forced (FORCE_HUMAN_GATE_CATEGORIES); explicit here for clarity.
-    )
+    # Cold-review fix (issue #63): ``DocumentationAgent`` now auto-loads
+    # persisted pending reports from ``reports_dir`` at construction time --
+    # since ``_PENDING_PATH.exists()`` was just confirmed True above, this
+    # exact report is already sitting in ``documentation``'s in-memory
+    # ``_pending`` state. Re-driving ``file_report()`` via ``_file_pending``
+    # here would collide with that already-loaded entry (the same
+    # one-exploit-one-report duplicate-rejection this module's own docstring
+    # describes) and crash instead of approving. Use what's already loaded
+    # directly when present; ``_file_pending`` stays as the fallback for a
+    # (no longer reachable in practice, but harmless to keep) construction
+    # that somehow didn't load it.
+    already_loaded = documentation.get_pending(_EXPLOIT_ID)
+    if already_loaded is not None:
+        pre_approval = {**already_loaded, "status": "pending_human_approval"}
+    else:
+        pre_approval = _file_pending(
+            documentation,
+            record,
+            filed_at=original_filed_at,
+            force_human_gate=True,  # denial_of_service is already unconditionally
+            # forced (FORCE_HUMAN_GATE_CATEGORIES); explicit here for clarity.
+        )
 
     # Compare parsed JSON field-for-field against what is already committed
     # on disk -- NOT a byte-for-byte comparison (key order, indentation, and
@@ -177,7 +192,13 @@ def main() -> int:
         return 1
 
     filed = documentation.approve(_EXPLOIT_ID, approved_by="owner")
-    _PENDING_PATH.unlink()
+    # Cold-review fix (issue #63): ``DocumentationAgent.approve`` now removes
+    # the persisted pending file itself (it writes the filed one first, then
+    # unlinks the pending one) -- an explicit ``_PENDING_PATH.unlink()`` here
+    # would double-unlink and raise ``FileNotFoundError``. ``missing_ok=True``
+    # keeps this safe even if ``_REPORTS_DIR``/``_PENDING_PATH`` ever
+    # diverge from what ``approve()`` just removed.
+    _PENDING_PATH.unlink(missing_ok=True)
 
     print(
         f"exploit_id={_EXPLOIT_ID} report_id={filed['report_id']} "

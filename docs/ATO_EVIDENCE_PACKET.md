@@ -100,10 +100,10 @@ flowchart TB
     ZoneA -.->|"crosses network boundary only to<br/>localhost target, never external"| Egress
     ZoneB -.->|"zero external calls"| Egress
 
-    style ZoneA fill:#3b1f1f,stroke:#e05252,color:#f5e5e5
+    style ZoneA fill:#3b1f1f,stroke:#e05253,color:#f5e5e5
     style ZoneB fill:#1f2a3b,stroke:#5289e0,color:#e5edf5
     style Store fill:#1f3b2a,stroke:#52e089,color:#e5f5ec
-    style TargetBoundary fill:#3b3580,stroke:#e0c552,color:#f5f0e5
+    style TargetBoundary fill:#3b3590,stroke:#e0c552,color:#f5f0e5
     style Egress fill:#2a1f3b,stroke:#8a52e0,color:#ede5f5
 ```
 
@@ -326,9 +326,9 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **358 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **359 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **252 passed, 106 skipped** in CI
+present locally (confirmed at PR time); **253 passed, 106 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
 not check it out, so the 100 total sibling-checkout citation cases
 class-skip cleanly there: 40 `TestTraceCitationsAgainstPinnedTarget` cases
@@ -373,7 +373,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **358 passing tests (252 passed, 106 skipped in CI), no live/network/GPU
+- **359 passing tests (253 passed, 106 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -395,18 +395,18 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 358
-  with the sibling checkout present, or 252 passed / 106 skipped without
+  changes plus its expanded citation-verification test set move it to 359
+  with the sibling checkout present, or 253 passed / 106 skipped without
   it, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 358-test suite (252 in CI)
+### 5.1 The 359-test suite (253 in CI)
 
-`pytest tests/ -q` → **358 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **252 passed, 106 skipped**
+`pytest tests/ -q` → **359 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **253 passed, 106 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -518,8 +518,8 @@ to approve and nothing already filed.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 358 total with the sibling checkout present,
-  or 252 passed / 106 skipped without it, §5.1).
+  the repo has since grown to 359 total with the sibling checkout present,
+  or 253 passed / 106 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -639,8 +639,8 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (358 tests with the sibling checkout
-  present / 252 passed, 106 skipped in CI, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (359 tests with the sibling checkout
+  present / 253 passed, 106 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
