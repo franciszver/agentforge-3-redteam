@@ -270,7 +270,7 @@ this project's rules of engagement (no production code changes from Phase
 #170 is a related but distinct shape.** Upstream issue #130
 ("`check_source_ref`/`check_claim` have no content-relevance check on
 ordinary `SourceRef`s") was closed as "design question, not currently
-triggering" — reporting #118's 10-live-draw investigation, which did not
+triggering", citing #118's 10-live-draw investigation, which did not
 reproduce a case where the gap actually fired, and #130's Ask scoped the
 motivating case
 precisely: a claim carrying **only** a structurally-valid-but-irrelevant
