@@ -33,6 +33,26 @@ opening double-quote is treated as a verbatim historical quote (e.g.
 NOT checked -- it is describing a past PR's own claim, not asserting
 anything about the current suite.
 
+Cold-review fix (issue #73 / PR #74): the shapes above all require the
+literal token ``passed`` (or ``passing tests``) adjacent to the number, so
+they never fire on the "339-test suite", "339 tests", or "move it to 339
+with" phrasings the ATO packet also uses to assert the same counts -- three
+sibling mismatches drifted silently past this guard. Three additional,
+*narrowly scoped* patterns close that gap, matched only against the exact
+phrasings currently in the docs rather than any bare "N-test"/"N tests"
+occurrence -- a broad version of this would also flag genuinely historical
+mentions like "the 171-test count that PR reported" (a past PR's count,
+not a claim about the current suite; an earlier, broader version of this
+guard was reverted for exactly that false positive, so this stays narrow
+by construction rather than by an exclusion list):
+
+- ``### 5.1 The N-test suite (M in CI)`` -- the section heading, checked
+  against ``(with_sibling_passed, ci_passed)``.
+- ``move it to N with the sibling checkout present`` -- checked against
+  ``with_sibling_passed``.
+- ``N tests with the sibling checkout`` -- checked against
+  ``with_sibling_passed``.
+
 A fully self-deriving check (e.g. literally re-rendering every doc's prose)
 is infeasible -- this is the closest robust alternative: real, live
 process counts, matched against every *current-state* claim the docs make,
@@ -62,6 +82,19 @@ _PAIR_RE = re.compile(r"(\d+)\s+passed\s*[,/]\s*(\d+)\s+skipped")
 # "/ N skipped" (that shape is claimed by _PAIR_RE instead).
 _SOLO_RE = re.compile(r"(\d+)\s+passed\b(?!\s*[,/]\s*\d+\s+skipped)")
 _PASSING_TESTS_RE = re.compile(r"(\d+)\s+passing tests\b")
+# Narrow, phrasing-specific patterns for the shapes that evade the two
+# above (issue #73 / PR #74 cold review) -- see module docstring for why
+# these are scoped to exact current phrasings rather than any bare
+# "N-test"/"N tests" occurrence.
+_HEADING_SUITE_RE = re.compile(
+    r"^#{1,6}\s+[\d.]+\s+The (\d+)-test suite \((\d+) in CI\)", re.MULTILINE
+)
+_MOVE_TO_WITH_SIBLING_RE = re.compile(
+    r"move it to (\d+)\s+with the sibling checkout present"
+)
+_TESTS_WITH_SIBLING_RE = re.compile(
+    r"(\d+)\s+tests? with the sibling checkout"
+)
 
 
 def _live_counts() -> tuple[int, int, int]:
@@ -113,6 +146,9 @@ _KINDS_TO_PATTERNS = (
     ("pair", _PAIR_RE),
     ("solo", _SOLO_RE),
     ("passing_tests", _PASSING_TESTS_RE),
+    ("heading_suite_pair", _HEADING_SUITE_RE),
+    ("with_sibling_solo", _MOVE_TO_WITH_SIBLING_RE),
+    ("with_sibling_solo", _TESTS_WITH_SIBLING_RE),
 )
 
 
@@ -169,6 +205,22 @@ def test_doc_test_count_claims_match_the_live_suite():
                     failures.append(
                         f"{doc.name}: claims {total} passing tests -- live "
                         f"suite (with sibling) says {with_sibling_passed}"
+                    )
+            elif kind == "heading_suite_pair":
+                suite_total, ci_total = numbers
+                if (suite_total, ci_total) != (with_sibling_passed, ci_passed):
+                    failures.append(
+                        f"{doc.name}: claims a {suite_total}-test suite "
+                        f"({ci_total} in CI) -- live suite says "
+                        f"{with_sibling_passed} (with sibling), {ci_passed} "
+                        "in CI"
+                    )
+            elif kind == "with_sibling_solo":
+                (total,) = numbers
+                if total != with_sibling_passed:
+                    failures.append(
+                        f"{doc.name}: claims {total} tests with the sibling "
+                        f"checkout -- live suite says {with_sibling_passed}"
                     )
 
     assert not failures, "stale test-count claim(s) in docs:\n" + "\n".join(failures)

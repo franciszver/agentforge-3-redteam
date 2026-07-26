@@ -395,7 +395,7 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 339
+  changes plus its expanded citation-verification test set move it to 340
   with the sibling checkout present, or 234 passed / 106 skipped without
   it, §5.1).
 
@@ -403,7 +403,7 @@ those changes included, not a pre-change baseline.
 
 ## 5. Eval-result evidence
 
-### 5.1 The 339-test suite (232 in CI)
+### 5.1 The 340-test suite (234 in CI)
 
 `pytest tests/ -q` → **340 passed** with the sibling Phase 2 checkout
 present, re-confirmed for this packet (§4.1); **234 passed, 106 skipped**
@@ -614,7 +614,7 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (339 tests with the sibling checkout
+  evidence), §5 Eval-result evidence (340 tests with the sibling checkout
   present / 234 passed, 106 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
