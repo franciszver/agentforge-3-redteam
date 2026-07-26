@@ -44,14 +44,18 @@ each Zone-A and Zone-B role is a separate Python module (`redteam.agents.red_tea
 that imports nothing from the sibling roles it must not see into and is
 called with only the typed inputs its own interface accepts — the Judge, for
 instance, scores from `(case, response, attempt_id)` alone and never touches
-Red Team internals (`judge.py:96-100`, `:343`). Running each role as its own
+Red Team internals (`judge.py:101-105`, `:348`). Running each role as its own
 OS process with its own local model instance is a stated **design goal, not
 yet implemented**: `redteam/campaign.py::run_campaign` currently calls all
 four components as in-process Python objects inside one `for` loop, with no
 process, thread, or subprocess boundary between them (`grep -rn
 "multiprocessing\|subprocess\|Popen\|fork(" redteam/ tools/` returns
-nothing). The module boundary is mechanically enforced by an AST import scan
-(`tests/redteam/test_judge_agent.py`); the OS-process boundary is aspirational.
+nothing). The module boundary is mechanically enforced by AST import scans
+in both directions — `tests/redteam/test_judge_agent.py` (the Judge must not
+import Red Team internals) and
+`tests/redteam/test_red_team_agent.py::test_independence_module_imports_no_judge_internals`
+(the Red Team must not import Judge internals) — the OS-process boundary is
+aspirational.
 
 The Orchestrator sits at the hub. It reads Observability state (which OWASP
 categories are under-covered, which findings are open at high severity,
@@ -138,8 +142,13 @@ boundary is a **module and data-flow** boundary — which function a given
 component's code can call and which typed payload it receives — enforced by
 what each module imports and what its public interface accepts, not a
 prompt instruction telling one role not to peek at another's context. It is
-not (yet) an OS-process or context-window boundary; all four components run
-in the same Python process today (see §1).
+not (yet) an OS-process boundary; all four components run in the same
+Python process today (see §1). It is stronger than a context-window
+boundary in one respect, though: the Judge's default, shipped path makes no
+model call and holds no context window at all (see §4) — it receives only
+`(case, response, attempt_id)`, so there is no shared context for Red Team
+reasoning to leak through even in principle, not merely a context that is
+correctly kept separate.
 
 ## 3. The six required components
 
