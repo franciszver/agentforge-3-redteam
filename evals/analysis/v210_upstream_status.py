@@ -8,9 +8,15 @@ deterministic modules, ``tool_call_scoping.py`` and ``answer_grounding.py``,
 both gated behind flags that default to ``False``
 (``copilot_claim_answer_grounding_enabled``,
 ``copilot_extraction_tool_call_scoping_enabled``) -- so a **default**
-``v2.1.0`` deployment is byte-identical to ``v2.0.0`` on every path these
-four findings exercise (verified below, citation by citation, for each
-finding independently -- not asserted as a blanket claim).
+``v2.1.0`` deployment is *behaviourally* equivalent to ``v2.0.0`` on every
+line these four findings' own cited paths exercise (verified below,
+citation by citation, for each finding independently -- not asserted as a
+blanket claim; every cited line itself IS byte-identical, same line
+number, at both tags). This is narrower than "byte-identical" as a general
+statement about ``extraction.py`` -- that file also gained an unrelated
+``_logger.warning(..., extra={"error_type": ...})`` call and a
+``_records_of`` -> ``records_of`` rename (issue #154) in the ``v2.1.0``
+diff, neither of which touches any line these four findings cite.
 
 **With the two new gates flipped ON**, this module goes one step further
 than "cannot determine from source" for VULN-0002/0003: both new gates are
