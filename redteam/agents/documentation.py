@@ -357,11 +357,31 @@ def _recording_ref_for(exploit_record: Mapping[str, Any]) -> str:
     """
     raw_ref = _require(exploit_record, "recording_ref")
     normalized = str(raw_ref).replace("\\", "/")
-    parts = [p for p in normalized.split("/") if p not in ("", ".")]
+    if normalized.endswith("/"):
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} is directory-shaped "
+            "(trailing '/') -- expected a path to the recording FILE itself, "
+            "not its containing directory; refusing to guess a parent"
+        )
+    raw_segments = normalized.split("/")
+    if ".." in raw_segments:
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} contains a '..' path "
+            "segment -- refusing to derive a report recording_ref that may "
+            "not point at the file's true immediate parent"
+        )
+    parts = [p for p in raw_segments if p not in ("", ".")]
     if len(parts) < 2:
         raise DocumentationAgentError(
             f"exploit_record recording_ref {raw_ref!r} has no parent "
             "directory -- cannot derive a report recording_ref from it"
+        )
+    if not parts[-1].endswith(".json"):
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} last path segment "
+            f"{parts[-1]!r} is not a '.json' file -- the function's contract "
+            "is the file's immediate parent directory, and a non-file input "
+            "must fail loudly rather than be silently treated as a filename"
         )
     dir_name = parts[-2]
     if not _RECORDING_DIR_NAME_RE.match(dir_name):
