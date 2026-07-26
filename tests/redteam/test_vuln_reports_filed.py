@@ -77,10 +77,19 @@ def test_known_open_pending_reports_are_contract_valid_and_not_approved():
 
 def test_vuln_0004_is_approved_and_filed():
     """P3.33 (issue #66): owner approved VULN-0004 (Medium, denial_of_service)
-    on 2026-07-25 after cold review confirmed the finding. Asserts the
-    approval landed as a real, code-mediated transition (approved_at/
-    approved_by stamped, filename suffix dropped, schema still valid) --
-    not a hand edit -- and that the stale pending artifact is gone."""
+    on 2026-07-25 after cold review confirmed the finding.
+
+    Asserts the approved END-STATE: the filed report is schema-valid,
+    carries the approved_at/approved_by stamps, and the stale
+    ``.pending-human-approval`` artifact is gone. This test only inspects
+    the artifact on disk -- it cannot and does not assert HOW it got there
+    (a hand edit producing byte-identical output would pass every
+    assertion here too). Provenance -- that the approval was a real,
+    code-mediated ``DocumentationAgent.approve()`` transition, not a hand
+    edit -- is attested by ``tools/approve_vuln_0004.py`` (which re-derives
+    and field-for-field compares the pre-approval report before approving)
+    and by the PR record, not by this test.
+    """
     path = _REPORTS_DIR / "VULN-0004.json"
     assert path.exists(), f"expected approved+filed report missing: {path}"
     report = json.loads(path.read_text(encoding="utf-8"))
