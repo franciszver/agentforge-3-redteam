@@ -270,8 +270,9 @@ this project's rules of engagement (no production code changes from Phase
 #170 is a related but distinct shape.** Upstream issue #130
 ("`check_source_ref`/`check_claim` have no content-relevance check on
 ordinary `SourceRef`s") was closed as "design question, not currently
-triggering" — its own 10-live-draw investigation did not reproduce a case
-where the gap actually fired, and #130's Ask scoped the motivating case
+triggering" — reporting #118's 10-live-draw investigation, which did not
+reproduce a case where the gap actually fired, and #130's Ask scoped the
+motivating case
 precisely: a claim carrying **only** a structurally-valid-but-irrelevant
 `SourceRef`, with **no** `DocumentCitation` at all. Checked against the
 recordings field-for-field: **VULN-0002's recording matches that shape
