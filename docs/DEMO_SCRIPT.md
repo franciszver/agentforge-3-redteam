@@ -20,18 +20,20 @@ evidence table this script complements with runnable commands.
   immediately before and after any live call and confirm VRAM stays flat.
 - `pytest tests/ -q` green (deterministic — no live/network/GPU call in the
   default suite; confirmed while writing this doc). The printed count is
-  environment-dependent: **327 passed** when the sibling Phase 2 checkout
+  environment-dependent: **339 passed** when the sibling Phase 2 checkout
   (`../agentforge-2-evidence-agent`, pinned `v2.0.0`) is present locally;
-  **227 passed, 100 skipped** in CI and for anyone cloning this repo without
-  that sibling (the 100 skipped are `TestTraceCitationsAgainstPinnedTarget`
+  **233 passed, 106 skipped** in CI and for anyone cloning this repo without
+  that sibling (the 106 skipped are `TestTraceCitationsAgainstPinnedTarget`
   (40 cases, `tests/test_dos_input_bound_resolution.py`) plus
   `TestCitationsAgainstPinnedTargets` (60 cases,
-  `tests/test_v210_upstream_status.py`, issue #58) — both class-skip
+  `tests/test_v210_upstream_status.py`, issue #58) plus
+  `TestStandingUpTargetPathsExistInPinnedTarget` (6 cases,
+  `tests/test_claude_md_accuracy.py`, issue #61) — all three class-skip
   cleanly when the sibling is absent).
 
 ```
 $ pytest tests/ -q
-327 passed in 2.38s          # with the sibling Phase 2 checkout present
+339 passed in 2.38s          # with the sibling Phase 2 checkout present
 ```
 
 ---
@@ -331,13 +333,14 @@ here for completeness:
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
 `python -m pytest tests/ -q` — on every push to `main` and on every pull
 request. CI does not check out the sibling Phase 2 target, so its printed
-count is **227 passed, 100 skipped** (the 100 skipped are
-`TestTraceCitationsAgainstPinnedTarget` (40, issue #25/#54) and
-`TestCitationsAgainstPinnedTargets` (60, issue #58), both of which
-class-skip cleanly when `../agentforge-2-evidence-agent` is absent). Live-model and target-stack
+count is **233 passed, 106 skipped** (the 106 skipped are
+`TestTraceCitationsAgainstPinnedTarget` (40, issue #25/#54),
+`TestCitationsAgainstPinnedTargets` (60, issue #58), and
+`TestStandingUpTargetPathsExistInPinnedTarget` (6, issue #61), all of
+which class-skip cleanly when `../agentforge-2-evidence-agent` is absent). Live-model and target-stack
 runs remain manual, outside CI: every command in this script was run
 locally against the dev stack while writing this doc, with the sibling
-checkout present, giving **327 passed**. `pytest tests/ -q` is still the
+checkout present, giving **339 passed**. `pytest tests/ -q` is still the
 reproducibility bar — re-run it after pulling this branch to confirm
-nothing here has drifted: expect **327 passed** if you have the sibling
-Phase 2 checkout at `v2.0.0`, or **227 passed, 100 skipped** if you don't.
+nothing here has drifted: expect **339 passed** if you have the sibling
+Phase 2 checkout at `v2.0.0`, or **233 passed, 106 skipped** if you don't.

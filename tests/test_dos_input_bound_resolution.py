@@ -36,6 +36,7 @@ from evals.analysis.dos_input_bound_resolution import (
     resolve_issue_25,
     resolve_issue_54,
 )
+from tests.conftest import TARGET_REPO, TARGET_TAG, target_repo_available
 
 RECORDING_PATH = (
     Path(__file__).resolve().parent.parent
@@ -51,13 +52,6 @@ ISSUE_54_RECORDING_PATH = (
     / "recordings"
     / "dos-unbounded-chat-message-length"
 )
-
-_TARGET_REPO = Path(__file__).resolve().parent.parent.parent / "agentforge-2-evidence-agent"
-_TARGET_TAG = "v2.0.0"
-
-
-def _target_repo_available() -> bool:
-    return (_TARGET_REPO / ".git").exists()
 
 
 @pytest.fixture()
@@ -174,7 +168,7 @@ def test_resolve_issue_54_rejects_a_draw_shaped_like_a_rejection(issue_54_draw):
 
 
 @pytest.mark.skipif(
-    not _target_repo_available(),
+    not target_repo_available(),
     reason="sibling target checkout ../agentforge-2-evidence-agent not present (expected in CI)",
 )
 class TestTraceCitationsAgainstPinnedTarget:
@@ -186,19 +180,19 @@ class TestTraceCitationsAgainstPinnedTarget:
     @pytest.mark.parametrize("path,line,quote", TRACE_CITATIONS, ids=[f"{p}:{ln}" for p, ln, _ in TRACE_CITATIONS])
     def test_citation_line_contains_quoted_text(self, path, line, quote):
         result = subprocess.run(
-            ["git", "show", f"{_TARGET_TAG}:{path}"],
-            cwd=_TARGET_REPO,
+            ["git", "show", f"{TARGET_TAG}:{path}"],
+            cwd=TARGET_REPO,
             capture_output=True,
             text=True,
             check=True,
         )
         source_lines = result.stdout.splitlines()
         assert 1 <= line <= len(source_lines), (
-            f"{path}:{line} is out of range for the pinned {_TARGET_TAG} "
+            f"{path}:{line} is out of range for the pinned {TARGET_TAG} "
             f"file ({len(source_lines)} lines)"
         )
         actual_line = source_lines[line - 1]
         assert quote in actual_line, (
-            f"{path}:{line} at pinned {_TARGET_TAG} reads {actual_line!r}, "
+            f"{path}:{line} at pinned {TARGET_TAG} reads {actual_line!r}, "
             f"which does not contain the cited quote {quote!r}"
         )

@@ -11,12 +11,18 @@ Design, self-updating rather than hardcoded:
   automatically as the suite grows; nothing here needs editing when a new
   test is added.
 - The "CI" count (no sibling `../agentforge-2-evidence-agent` checkout) is
-  derived the same way, MINUS the number of tests that
+  derived the same way, MINUS the number of tests that skip when the
+  sibling is absent across all three sibling-gated classes:
   `TestTraceCitationsAgainstPinnedTarget` in
-  `tests/test_dos_input_bound_resolution.py` skips when the sibling is
-  absent -- which is exactly `len(TRACE_CITATIONS)` (that class is
-  parametrized 1:1 over it). So the CI numbers also self-update as
-  `TRACE_CITATIONS` grows (as it just did in this same PR, 34 -> 40).
+  `tests/test_dos_input_bound_resolution.py` (`len(TRACE_CITATIONS)`),
+  `TestCitationsAgainstPinnedTargets` in
+  `tests/test_v210_upstream_status.py` (`len(TRACE_CITATIONS_V210)`), and
+  `TestStandingUpTargetPathsExistInPinnedTarget` in
+  `tests/test_claude_md_accuracy.py` (one per path
+  `_target_paths_in_standing_up_section()` extracts from CLAUDE.md) -- each
+  parametrized 1:1 over its respective source. So the CI numbers also
+  self-update as any of those three grows (as `TRACE_CITATIONS` just did in
+  a prior PR, 34 -> 40).
 
 Docs are scanned for two bold-free-text shapes actually used in this repo's
 prose: ``N passed`` (optionally paired with ``, M skipped`` or ``/ M
@@ -43,6 +49,7 @@ from pathlib import Path
 
 from evals.analysis.dos_input_bound_resolution import TRACE_CITATIONS
 from evals.analysis.v210_upstream_status import TRACE_CITATIONS_V210
+from tests.test_claude_md_accuracy import _target_paths_in_standing_up_section
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
@@ -62,13 +69,15 @@ def _live_counts() -> tuple[int, int, int]:
 
     ``with_sibling_passed`` is a real subprocess collection count (matches
     whatever the sibling-checkout-present dev environment actually has).
-    ``ci_passed``/``ci_skipped`` subtract off exactly the citation-count
-    tests that skip when the sibling is absent -- CI never checks out the
-    sibling (`.github/workflows/ci.yml` runs plain `pytest tests/ -q`).
-    Two citation sets now skip that way:
-    `TestTraceCitationsAgainstPinnedTarget` (`TRACE_CITATIONS`, issue
-    #25/#54) and `TestCitationsAgainstPinnedTargets` (`TRACE_CITATIONS_V210`,
-    issue #58) -- both parametrized 1:1 over their respective tuple.
+    ``ci_passed``/``ci_skipped`` subtract off exactly the tests that skip
+    when the sibling is absent -- CI never checks out the sibling
+    (`.github/workflows/ci.yml` runs plain `pytest tests/ -q`). Three
+    classes skip that way: `TestTraceCitationsAgainstPinnedTarget`
+    (`TRACE_CITATIONS`, issue #25/#54), `TestCitationsAgainstPinnedTargets`
+    (`TRACE_CITATIONS_V210`, issue #58), and
+    `TestStandingUpTargetPathsExistInPinnedTarget`
+    (`_target_paths_in_standing_up_section()`, issue #61) -- each
+    parametrized 1:1 over its respective source.
     """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "--collect-only", "-q"],
@@ -81,8 +90,12 @@ def _live_counts() -> tuple[int, int, int]:
     assert match, f"could not parse collected-test count from:\n{result.stdout[-500:]}"
     total = int(match.group(1))
 
-    citation_count = len(TRACE_CITATIONS) + len(TRACE_CITATIONS_V210)
-    return total, total - citation_count, citation_count
+    skip_count = (
+        len(TRACE_CITATIONS)
+        + len(TRACE_CITATIONS_V210)
+        + len(_target_paths_in_standing_up_section())
+    )
+    return total, total - skip_count, skip_count
 
 
 def _is_quoted_historical(text: str, match_start: int) -> bool:
