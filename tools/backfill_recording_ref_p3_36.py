@@ -62,7 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jsonschema import Draft202012Validator  # noqa: E402
 
-from redteam.agents.documentation import build_vuln_report  # noqa: E402
+from redteam.agents.documentation import FORCE_HUMAN_GATE_CATEGORIES, build_vuln_report  # noqa: E402
 from redteam.agents.judge import JudgeAgent  # noqa: E402
 from redteam.harness.db import ExploitDB  # noqa: E402
 from tools.build_vuln_report_p3_54 import _build_exploit_record  # noqa: E402
@@ -121,10 +121,22 @@ def _plan() -> list[dict[str, Any]]:
     plans: list[dict[str, Any]] = []
     for exploit_id, record in _judge_scored_records():
         report_id = "VULN-" + exploit_id.split("-", 1)[1]
-        plans.append({"report_id": report_id, "record": record, "force_human_gate": False})
+        plans.append(
+            {
+                "report_id": report_id,
+                "record": record,
+                "force_human_gate": record["category"] in FORCE_HUMAN_GATE_CATEGORIES,
+            }
+        )
 
     dos_record = _build_exploit_record()
-    plans.append({"report_id": "VULN-0004", "record": dos_record, "force_human_gate": True})
+    plans.append(
+        {
+            "report_id": "VULN-0004",
+            "record": dos_record,
+            "force_human_gate": dos_record["category"] in FORCE_HUMAN_GATE_CATEGORIES,
+        }
+    )
     return plans
 
 
