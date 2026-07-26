@@ -5,18 +5,23 @@ contract-valid ``judge_verdict`` (``contracts/v1/judge_verdict.schema.json``).
 
 ## Architectural independence (ARCHITECTURE.md §3(2)/§6)
 
-The Judge is **architecturally independent** from the Red Team Agent:
-separate process/context by construction, because this module imports
-nothing from a Red Team module and holds no Red Team state. It scores from
-exactly two inputs -- the ``evals.schema.AttackCase`` that produced the
-probe (specifically its own rule-based ``detect`` predicate) and the
+The Judge is **architecturally independent** from the Red Team Agent at the
+module and data level (NOT an OS-process boundary -- see
+``docs/ARCHITECTURE.md`` §1, which corrects an earlier claim that each role
+runs as its own OS process; ``redteam/campaign.py::run_campaign`` calls all
+four components in-process, in one loop): this module imports nothing from
+a Red Team module and holds no Red Team state. It scores from exactly two
+inputs -- the ``evals.schema.AttackCase`` that produced the probe
+(specifically its own rule-based ``detect`` predicate) and the
 ``evals.runner.ParsedResponse`` the target returned -- never from Red Team
 internals (there is no Red Team Agent module yet; this module also imports
-nothing from any *sibling* agent or the stateful Regression Harness, so
-independence holds going forward too -- see
+nothing from any *sibling* agent, the stateful Regression Harness, or the
+Observability layer, so independence holds going forward too -- see
 ``tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals``,
-which ast-scans this file's imports for `redteam.agents`/`redteam.harness`
-prefixes).
+which ast-scans this file's imports for `redteam.agents`/`redteam.harness`/
+`redteam.observability` prefixes, including relative and aliased forms --
+that scan's own documented limits (`importlib`, dynamic strings, attribute
+access after a bare `import redteam`) are in its docstring).
 
 ## Outcome mapping (the deterministic core)
 

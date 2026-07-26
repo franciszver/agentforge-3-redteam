@@ -124,23 +124,67 @@ def test_deterministic_default_path_is_reproducible_no_model_call():
 def test_independence_module_imports_no_red_team_or_sibling_agent_internals():
     """Architectural independence (ARCHITECTURE.md §3(2)/§6): the Judge must
     not import any Red Team module, nor any sibling agent module, nor the
-    Regression Harness's stateful internals -- it scores purely from
-    (case, response). There is no Red Team module yet, so this also guards
-    the module going forward: adding `import redteam.agents.red_team` (or
-    similar) here should fail this test the moment such a module exists."""
+    Regression Harness's stateful internals, nor the Observability layer
+    (whose action log carries full Red Team attempt payloads, per
+    ``campaign.py``'s ``action_log.append`` calls) -- it scores purely from
+    (case, response, attempt_id). There is no Red Team module yet, so this
+    also guards the module going forward: adding `import
+    redteam.agents.red_team` (or similar) here should fail this test the
+    moment such a module exists.
+
+    ## What this guard does NOT catch (issue #73)
+
+    This is an AST scan over ``import`` / ``from ... import`` statements in
+    ``judge.py`` only. It resolves both absolute and relative imports
+    (``from .red_team import X``, ``from . import red_team``, ``from
+    ..observability.action_log import ActionLog``) to the fully-qualified
+    module they refer to, and catches aliased forms too (``import
+    redteam.agents.red_team as rt``, ``from redteam.agents import red_team
+    as r2`` -- the ``alias.name``/``node.module`` checked here are the
+    imported dotted path, not the local ``as`` binding, so aliasing does
+    not evade it). It does not, and cannot without much heavier static
+    analysis, catch: ``import redteam`` followed by attribute access
+    (``redteam.agents.red_team.something``), ``from redteam import agents``,
+    dynamic loading via ``importlib.import_module("redteam.agents.red_team")``
+    or ``__import__``, or a forbidden import built as a runtime string. It
+    also only scans this one file -- a forbidden import added to a module
+    that ``judge.py`` itself imports from would not be caught here. State
+    this precisely rather than implying a stronger guarantee than the scan
+    delivers."""
     source = JUDGE_MODULE_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(JUDGE_MODULE_PATH))
-    forbidden_prefixes = ("redteam.agents", "redteam.harness")
+    forbidden_prefixes = ("redteam.agents", "redteam.harness", "redteam.observability")
+    # judge.py's own package, as dotted parts -- needed to resolve relative
+    # imports (level > 0) to the fully-qualified module they refer to, the
+    # same way Python's own import machinery would.
+    judge_package_parts = ["redteam", "agents"]
+
+    def _resolve_relative(node: ast.ImportFrom) -> list[str]:
+        base_len = len(judge_package_parts) - (node.level - 1)
+        base = judge_package_parts[:base_len] if base_len > 0 else []
+        prefix = ".".join(base)
+        if node.module:
+            full = f"{prefix}.{node.module}" if prefix else node.module
+            return [full]
+        return [f"{prefix}.{alias.name}" if prefix else alias.name for alias in node.names]
+
     offending: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.startswith(forbidden_prefixes):
                     offending.append(alias.name)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            if node.module.startswith(forbidden_prefixes):
-                offending.append(node.module)
-    assert offending == [], f"judge.py must not import Red Team / sibling-agent internals: {offending}"
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                resolved = _resolve_relative(node)
+            elif node.module:
+                resolved = [node.module]
+            else:
+                resolved = []
+            offending.extend(m for m in resolved if m.startswith(forbidden_prefixes))
+    assert offending == [], (
+        f"judge.py must not import Red Team / sibling-agent / observability internals: {offending}"
+    )
 
 
 def test_judge_timeout_raised_when_scoring_exceeds_budget():

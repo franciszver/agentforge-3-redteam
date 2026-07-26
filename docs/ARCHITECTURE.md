@@ -25,7 +25,7 @@
 ## 1. Prose summary (~500 words)
 
 The platform is six components split across two trust zones so that no
-single process can both attack the target and grade its own attack.
+single role can both attack the target and grade its own attack.
 **Zone A (adversarial)** holds only the **Red Team Agent**: it generates
 novel probes against the target — chat messages, document-upload payloads,
 multi-turn sequences — and mutates partial successes into variants. It runs
@@ -37,10 +37,25 @@ Validation Harness** (a versioned, queryable exploit database) and the
 log). The Judge never sees the Red Team's reasoning or prompt history — only
 the target's response to a given probe — and the Red Team never sees the
 Judge's verdicts beyond a pass/fail/partial signal relayed through the
-Orchestrator. That separation is architectural, not cosmetic: each Zone-A and
-Zone-B role runs as its own OS process with its own local model instance and
-its own context window, so a compromised or manipulated Red Team session has
-no channel back into how its own output gets scored.
+Orchestrator. That separation is architectural, not cosmetic — but as shipped
+it is enforced at the **module and data level, not the OS-process level**:
+each Zone-A and Zone-B role is a separate Python module (`redteam.agents.red_team`,
+`redteam.agents.judge`, `redteam.agents.orchestrator`, `redteam.agents.documentation`)
+that imports nothing from the sibling roles it must not see into and is
+called with only the typed inputs its own interface accepts — the Judge, for
+instance, scores from `(case, response, attempt_id)` alone and never touches
+Red Team internals (`judge.py:101-105`, `:348`). Running each role as its own
+OS process with its own local model instance is a stated **design goal, not
+yet implemented**: `redteam/campaign.py::run_campaign` currently calls all
+four components as in-process Python objects inside one `for` loop, with no
+process, thread, or subprocess boundary between them (`grep -rn
+"multiprocessing\|subprocess\|Popen\|fork(" redteam/ tools/` returns
+nothing). The module boundary is mechanically enforced by AST import scans
+in both directions — `tests/redteam/test_judge_agent.py` (the Judge must not
+import Red Team internals) and
+`tests/redteam/test_red_team_agent.py::test_independence_module_imports_no_judge_internals`
+(the Red Team must not import Judge internals) — the OS-process boundary is
+aspirational.
 
 The Orchestrator sits at the hub. It reads Observability state (which OWASP
 categories are under-covered, which findings are open at high severity,
@@ -78,18 +93,18 @@ every arrow in the diagram below and are specified in full in P3.12
 
 ```mermaid
 flowchart LR
-    subgraph ZoneA["Zone A — Adversarial (isolated process/context)"]
-        RT["Red Team Agent<br/>(abliterated Qwen, qwen2.5-abliterate:7b, local)"]
+    subgraph ZoneA["Zone A — Adversarial (isolated module boundary)"]
+        RT["Red Team Agent<br/>(abliterated Qwen, qwen2.5-abliterate:7b, local; the only model-backed role)"]
     end
 
     subgraph Target["Attack Target"]
         T["Phase 2 Clinical Co-Pilot<br/>(agentforge-2-evidence-agent v2.0.0)"]
     end
 
-    subgraph ZoneB["Zone B — Evaluative (separate isolated processes/contexts)"]
-        J["Judge Agent<br/>(local instruct model)"]
-        O["Orchestrator Agent<br/>(local instruct model)"]
-        D["Documentation Agent<br/>(local instruct model)"]
+    subgraph ZoneB["Zone B — Evaluative (separate modules, single process)"]
+        J["Judge Agent<br/>(rule-based detect(); model-optional scorer seam, unused by default)"]
+        O["Orchestrator Agent<br/>(deterministic rule/threshold logic; no model call)"]
+        D["Documentation Agent<br/>(deterministic template; model-optional narrator seam, unused by default)"]
     end
 
     subgraph Shared["Shared services (feed the Orchestrator, not just dashboards)"]
@@ -123,9 +138,17 @@ target itself did in response to a probe — read independently by the Judge
 from the target's own output, not relayed by the Red Team. Conversely the
 Red Team only ever receives an Orchestrator-relayed directive, never the
 Judge's reasoning. This is what "architectural independence" means here: the
-boundary is process and context isolation, enforced by which service can
-open a connection to which, not a prompt instruction telling one role not to
-peek at another's context.
+boundary is a **module and data-flow** boundary — which function a given
+component's code can call and which typed payload it receives — enforced by
+what each module imports and what its public interface accepts, not a
+prompt instruction telling one role not to peek at another's context. It is
+not (yet) an OS-process boundary; all four components run in the same
+Python process today (see §1). It is stronger than a context-window
+boundary in one respect, though: the Judge's default, shipped path makes no
+model call and holds no context window at all (see §4) — it receives only
+`(case, response, attempt_id)`, so there is no shared context for Red Team
+reasoning to leak through even in principle, not merely a context that is
+correctly kept separate.
 
 ## 3. The six required components
 
@@ -134,13 +157,15 @@ peek at another's context.
    variants (e.g. an authz probe that got a 403 tries an indirect patient
    reference next), and runs multi-turn attack sequences. Fully autonomous
    within an Orchestrator-set budget — no human prompts the next attempt.
-   Runs in Zone A, isolated from every Zone-B process.
+   Runs in Zone A, module-isolated from every Zone-B component (see §1).
 
-2. **Judge Agent.** Architecturally independent from the Red Team (separate
-   process, separate model instance, separate context — never shares a
-   context window or prompt history with Zone A). Scores each target
-   response as success / fail / partial / regression against the originating
-   case's defined success criteria, with a documented drift-detection method
+2. **Judge Agent.** Architecturally independent from the Red Team at the
+   module and data level (separate module, no shared state — never receives
+   a context window or prompt history from Zone A, only `(case, response,
+   attempt_id)`). Scores each target response as success / fail / partial /
+   regression against the originating case's defined success criteria via
+   the case's own rule-based `detect()` predicate by default (no model call
+   in the shipped path — see §4), with a documented drift-detection method
    (§6) protecting scoring consistency over time.
 
 3. **Orchestrator Agent.** Reads Observability and Regression Harness state,
@@ -178,10 +203,18 @@ peek at another's context.
 ## 4. Fully-local model strategy (decided)
 
 The owner's decision, locked in `planning/PLAN.md` and reaffirmed here as
-settled: **local-only, no cloud, for every one of the four AI roles.** No
-role calls a hosted API; nothing target-adjacent leaves the local network
-boundary — consistent with the target itself being a zero-PHI-egress,
-no-internet clinical appliance.
+settled: **if any of the four roles calls a model, that call is local-only,
+no cloud.** No role calls a hosted API; nothing target-adjacent leaves the
+local network boundary — consistent with the target itself being a
+zero-PHI-egress, no-internet clinical appliance. As shipped, only one of the
+four roles actually makes a model call: the Red Team Agent. The Judge,
+Orchestrator, and Documentation Agent are each deterministic by default
+(rule-based `detect()`, rule/threshold logic, and a fixed template,
+respectively) and each exposes an optional model-backed seam
+(`JudgeAgent(scorer=...)`, `Orchestrator(ranker=...)`,
+`build_vuln_report(narrator=...)`) that is unused in the shipped default
+path. If any of those seams is later wired to a local model, that model is
+subject to the same local-only rule.
 
 - **Red Team Agent generator:** **abliterated Qwen**
   (`huihui_ai/qwen2.5-abliterate:7b`), served locally. This is the one role
@@ -197,23 +230,24 @@ no-internet clinical appliance.
   for the remainder of the project on that basis). The Red Team process and
   the target process are therefore scheduled to never both hold GPU residency
   at once, not merely logically isolated.
-- **Judge / Orchestrator / Documentation:** three separate local
-  instruction-tuned model instances, each in its own isolated process and
-  context. None needs to be uncensored — judging, planning, and report-writing
-  are not adversarial-generation tasks — so stock instruct models are
-  appropriate and lower-risk than the Red Team's abliterated model.
+- **Judge / Orchestrator / Documentation:** deterministic by default, no
+  model instance, no model call — see the correction above. None needs to
+  be uncensored even if a model seam is later wired in — judging, planning,
+  and report-writing are not adversarial-generation tasks — so a stock
+  instruct model would be appropriate and lower-risk than the Red Team's
+  abliterated model if and when one of those optional seams is used.
 - **Feasibility is validated, not assumed, at the start of P3.6 (Build).**
-  This document commits to the *role* (local, uncensored, isolated) and
-  treats the *specific model* (abliterated Qwen) as configuration to be
-  measured against refusal rate and attack quality before the Red Team Agent
-  is built out. If that model underperforms, the safety and independence
-  invariants in §3 and §2 hold regardless of which model fills the Red Team
-  role — swapping the model is a configuration change, not an architecture
-  change: it is set by `DEFAULT_MODEL` in `redteam/agents/red_team.py`, a
-  single overridable constant. An abliterated Gemma-3 GGUF was evaluated
-  first and ruled out at load time — its `token_embd` tensor shape was
-  incompatible with the installed ollama version — which is what led to
-  qwen2.5-abliterate as the shipped default.
+  This document commits to the *role* (local, uncensored where needed,
+  module-isolated) and treats the *specific model* (abliterated Qwen) as
+  configuration to be measured against refusal rate and attack quality
+  before the Red Team Agent is built out. If that model underperforms, the
+  safety and independence invariants in §3 and §2 hold regardless of which
+  model fills the Red Team role — swapping the model is a configuration
+  change, not an architecture change: it is set by `DEFAULT_MODEL` in
+  `redteam/agents/red_team.py`, a single overridable constant. An
+  abliterated Gemma-3 GGUF was evaluated first and ruled out at load time —
+  its `token_embd` tensor shape was incompatible with the installed ollama
+  version — which is what led to qwen2.5-abliterate as the shipped default.
 
 ## 5. Build-vs-configure decision record
 
@@ -226,28 +260,32 @@ the candidates below provide that loop; each is evaluated on its own terms.
 
 | Tool | What it's built for | Why it doesn't replace this platform |
 |---|---|---|
-| **Garak** (LLM red-team framework) | Automated probe/detector pairs against an LLM endpoint, largely assuming a hosted or locally-served *bare* model behind a known API shape. | No concept of Judge/Red-Team process independence (its probes and detectors run in one process), no Orchestrator reading coverage state to direct the next attack, no regression DB, no notion of a citation/verification trust layer — the target's actual attack surface (`SourceRef` vs `DocumentCitation` asymmetry, patient-binding tool guards, document-ingestion composition) is bespoke and off-map for a generic LLM-probe tool. Garak-style probes are a reasonable *seed source* for Red Team case ideas, not a substitute for the platform. |
+| **Garak** (LLM red-team framework) | Automated probe/detector pairs against an LLM endpoint, largely assuming a hosted or locally-served *bare* model behind a known API shape. | No enforced module boundary between its probes and detectors (they run as ordinary in-process calls with no import-level restriction on what a detector can see of a probe's internals), no versioned regression database recording prior results, no Orchestrator reading coverage/regression state to direct the next attack, and no notion of a citation/verification trust layer — the target's actual attack surface (`SourceRef` vs `DocumentCitation` asymmetry, patient-binding tool guards, document-ingestion composition) is bespoke and off-map for a generic LLM-probe tool. This platform's Judge/Red-Team separation is likewise not OS-process isolation today (see §1) — the genuine difference from Garak is the *enforced* module boundary (an AST-scanned import guard, `tests/redteam/test_judge_agent.py`) plus the regression DB and Orchestrator-readable observability feeding automated coverage decisions, none of which Garak provides. Garak-style probes are a reasonable *seed source* for Red Team case ideas, not a substitute for the platform. |
 | **Burp Suite / OWASP ZAP** (web pentest) | HTTP-layer attack surface: injection, auth, session handling, at the request/response level. | The target's most valuable surfaces are semantic, not syntactic — a topically-irrelevant `SourceRef` passing verification, a document fact composed into a reasoning prompt, a planner substituting the wrong tool. A proxy-and-scanner architecture has no model of "is this citation topically relevant" or "did the planner call the tool it should have." Also cloud/plugin-ecosystem-oriented by default, in tension with the fully-local, no-egress thesis. |
 | **Semgrep** (SAST) | Static pattern-matching over source code. | Finds a different class of bug entirely (unsafe patterns in code as written), not runtime LLM-agent behavior under adversarial input. Genuinely useful as a *complementary* CI check on the platform's and the target's own code, but it cannot generate an adversarial `/chat` probe, judge a citation's semantic support, or detect a scoring drift — it has no runtime loop at all. |
 | **Commercial red-team platforms** | End-to-end managed adversarial-testing SaaS. | Cloud-hosted or cloud-dependent by construction — disqualified outright by the fully-local, no-egress requirement, since the target itself must never have PHI-adjacent traffic leave the local boundary and the red-team traffic touches the same appliance. Even where a self-hosted tier exists, none is scoped to this target's bespoke trust model (citation-verification asymmetry, patient-binding dual-guard, dev-token-bridge default) — genuinely independent Judge-vs-Generator separation and an Orchestrator-readable regression DB are not off-the-shelf features of any commercial platform surveyed for this decision. |
 
 **Framework choice: custom orchestration, not LangGraph/CrewAI/AutoGen.**
 Consistent with Phase 2's committed no-LangGraph decision, the same reasoning
-applies here with more force: this platform's core requirement — process-level
-Judge/Red-Team isolation as a *security property*, not a workflow convenience
-— sits below what any of those frameworks are designed to guarantee. All
-three assume a single orchestrating process coordinating in-process agent
-objects or lightweight thread/task boundaries; none treats "agent A must not
-be able to read agent B's context even in principle" as a first-class
-constraint, because their target use case is collaborative multi-agent
-composition, not adversarial separation of duties. Adopting one would mean
-either fighting the framework to enforce real process isolation anyway, or
-quietly downgrading the independence requirement to "separate prompts in one
-process" — the exact failure mode the brief calls out by name. A
-dependency-light, stdlib-plus-pytest custom orchestrator (already the pattern
-established in `evals/`) keeps the attack surface small, keeps every
-inter-agent boundary auditable by reading the code that enforces it, and adds
-zero third-party supply-chain exposure to a platform whose own job is finding
+applies here with more force: this platform's core requirement —
+enforced module-level Judge/Red-Team isolation as a *security property*, not
+a workflow convenience, with OS-process isolation as the longer-term goal —
+sits below what any of those frameworks are designed to guarantee. All three
+assume a single orchestrating process coordinating in-process agent objects
+or lightweight thread/task boundaries, with no mechanism that fails a build
+when one agent's module imports another's internals; none treats "agent A
+must not be able to read agent B's context even in principle" as a
+first-class, mechanically-checked constraint, because their target use case
+is collaborative multi-agent composition, not adversarial separation of
+duties. Adopting one would mean either fighting the framework to add an
+enforced import boundary (and, eventually, real process isolation) anyway,
+or quietly dropping the independence requirement to "separate prompts in one
+process, unchecked" — a strictly weaker guarantee than what the AST-scanned
+import guard already gives this platform today. A dependency-light,
+stdlib-plus-pytest custom orchestrator (already the pattern established in
+`evals/`) keeps the attack surface small, keeps every inter-agent boundary
+auditable by reading the code that enforces it, and adds zero third-party
+supply-chain exposure to a platform whose own job is finding
 supply-chain-adjacent and trust-boundary failures in someone else's system.
 
 ## 6. AI-use disclosure
@@ -281,9 +319,9 @@ gold-set verdict on more than 1 in 20 gold cases)**, or if its score on
 **any individual gold case flips from its previous run's score**, the sweep
 is flagged `judge_drift_suspected` in Observability and the Orchestrator
 halts new attack directives until a human reviews the flagged cases —
-correction is a human decision (re-anchor the Judge's prompt/criteria against
-the gold set, or roll back the Judge model version), not an automatic
-re-tuning, so a drifting Judge cannot silently correct itself into a
+correction is a human decision (re-anchor the Judge's `detect`/scoring
+criteria against the gold set, or roll back the Judge/scorer version), not
+an automatic re-tuning, so a drifting Judge cannot silently correct itself into a
 different, unreviewed scoring standard. This threshold and the gold-set
 contents are versioned alongside the inter-agent contracts (P3.12) so a
 threshold change is itself an auditable, reviewed diff.
@@ -294,9 +332,14 @@ threshold change is itself an auditable, reviewed diff.
 and is explicitly scoped in its own docstring and `evals/README.md` as a
 prototype of **only** the Red-Team-generates → Judge-scores loop, using a
 **scripted generator** (a fixed case list, `ALL_CASES`) in place of the
-uncensored-model Red Team Agent, and a **rule-based judge** (each case's own
-`detect` predicate) in place of the independent Judge Agent described in §3.
-It does not yet include an Orchestrator, a Documentation Agent, a Regression
+uncensored-model Red Team Agent, and the same **rule-based judge** logic
+(each case's own `detect` predicate) that the shipped `JudgeAgent` also uses
+by default — the difference from the Judge Agent described in §3 is not
+rule-based-vs-model-based (both are rule-based today) but that the shipped
+`JudgeAgent` adds module-level independence enforcement, contract-schema
+validation, a timeout budget, and the drift-detection method (§6), none of
+which the prototype has. It does not yet include an Orchestrator, a
+Documentation Agent, a Regression
 Harness, or an Observability Layer — those are P3.6 onward. The prototype's
 value here is that it proves the *mechanics* (live target driving, SSE
 parsing, record-per-draw honesty discipline) the full platform depends on;
