@@ -14,46 +14,70 @@ all six components (Orchestrator, Red Team, target client, Judge, store,
 Documentation) into one Python process, calling each in turn inside a
 single loop (`redteam/campaign.py:254,295,353,446`) — so today the boundary
 is enforced at the module/data level, not the OS-process level described
-as a goal in `docs/ARCHITECTURE.md`. Closing that gap is tracked separately
-(issue #73). What ships today is checked mechanically, **in both
+as a goal in `docs/ARCHITECTURE.md`, not yet implemented. That gap was
+raised and resolved at the documentation level in issue #73 (closed — the
+docs were corrected to stop overclaiming OS-process isolation as shipped
+behavior when it is a design goal, not implemented); implementing
+OS-process isolation itself is **not currently scheduled**. What ships
+today is checked mechanically, **in both
 directions**: `tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals`
 is an AST import scan over `redteam/agents/judge.py` that fails the moment
 the Judge module imports anything whose dotted path starts with
-`redteam.agents`, `redteam.harness`, or `redteam.observability`; the
-symmetric
+`redteam.agents`, `redteam.harness`, or `redteam.observability`; a
 `tests/redteam/test_red_team_agent.py::test_independence_module_imports_no_judge_internals`
-scans `redteam/agents/red_team.py` the same way for any import of
-`redteam.agents.judge`. Each scan is narrower than "no code path can leak
-one agent's internals to the other": it does not catch `import redteam`
-followed by attribute access, `from redteam import agents`, a dynamic
-`importlib.import_module(...)` call, or a forbidden import built as a
-runtime string. Each scan also only covers the one module file it targets
-— a forbidden import added to a module that file itself imports from would
-not be caught. The tests enforce the module-boundary convention against
-accidental drift; they do not prove no code path could ever route one
-agent's internals into the other.
+scan of `redteam/agents/red_team.py` catches any import of
+`redteam.agents.judge`, but the two scans are not symmetric: the Judge-side
+scan explicitly resolves relative imports (`from .red_team import X`,
+`from . import red_team`) to their fully-qualified module before checking
+the forbidden prefixes; the Red-Team-side scan checks only the absolute
+`node.module` string, so a relative import — `from .judge import X` —
+would pass it undetected. Each scan is narrower than "no code path can
+leak one agent's internals to the other" in other ways too: neither
+catches `import redteam` followed by attribute access, `from redteam
+import agents`, a dynamic `importlib.import_module(...)` call, or a
+forbidden import built as a runtime string. Each scan also only covers the
+one module file it targets — a forbidden import added to a module that
+file itself imports from would not be caught. The tests enforce the
+module-boundary convention against accidental drift; they do not prove no
+code path could ever route one agent's internals into the other.
 
 **Reconciling this against the kickoff brief's own wording.**
-`planning/KICKOFF_PROMPT.md`'s HARD CONSTRAINT reads (quoted verbatim, a
-requirement written before any code existed, not a claim about shipped
-behavior — the parenthesised mechanism below remains a design goal, not
-yet implemented): *Attack generation and evaluation must NOT share
-context ("conflict of interest by design"). Build four agents with
-architectural (separate process/context) independence.* Read plainly,
-that names two things: an **intent** (no shared context between attack
-generation and evaluation) and a **mechanism** (separate processes at the
-OS level). Comparing this release against both,
-rather than only the intent: the intent is met — the Judge receives only
-`(case, response, attempt_id)`, holds no model context at all on its
-default path, imports nothing from the Red Team, and both directions are
-enforced by the AST scans above. The parenthesised mechanism — separate
-processes — is not implemented; `docs/ARCHITECTURE.md` §1 states this
-directly (all four components run in one Python process, per-role
+`planning/KICKOFF_PROMPT.md`'s HARD CONSTRAINT reads (quoted verbatim in
+full, a requirement written before any code existed, not a claim about
+shipped behavior — the mechanism it defines below remains a design goal,
+not yet implemented): *HARD CONSTRAINT — GENUINE MULTI-AGENT WITH SEPARATED
+TRUST. A single-agent or linear pipeline FAILS the assignment. Attack
+generation and evaluation must NOT share context ("conflict of interest by
+design"). Build four agents with architectural (separate process/context)
+independence.* That first sentence is the most adverse line in the brief
+for this release to face squarely: `run_campaign` calls Orchestrator, Red
+Team, target, Judge, store, and Documentation "in turn inside a single
+loop" (stated plainly above), which is exactly the shape a grader would
+call a linear pipeline. Read plainly, the constraint names two things: an
+**intent** (no shared context between attack generation and evaluation)
+and its **definition of architectural independence** — "(separate
+process/context)" (still not implemented, a design goal per
+`docs/ARCHITECTURE.md`, not an aside qualifying that intent) is the
+brief's own operational definition of what "architectural independence"
+means. Comparing this release against both, rather than only the intent:
+the intent is met — the Judge receives only `(case, response,
+attempt_id)`, holds no model context at all on its default path, imports
+nothing from the Red Team, and both directions are enforced by the AST
+scans above, asymmetries and all. The brief's process/context mechanism
+remains a design goal, not implemented; `docs/ARCHITECTURE.md` §1 states
+this directly (all six components run in one Python process, per-role
 OS-process isolation is a stated design goal, not yet shipped) and
 `docs/ATO_EVIDENCE_PACKET.md` §1 does too. Both documents are public and
-committed, so a reader can compare them side by side without this
-document's help; this document says so explicitly rather than leaving it
-to be discovered.
+committed, so a reader can compare
+them side by side without this document's help; this document says so
+explicitly rather than leaving it to be discovered. The judgment call this
+release makes, stated openly rather than left implicit: the intent survives
+a full, un-elided reading of the HARD CONSTRAINT, and is if anything
+sharper for facing the "linear pipeline" sentence directly instead of
+quoting around it — but a reader applying the brief's literal
+"single-agent or linear pipeline FAILS" test to `run_campaign`'s current
+single-process, single-loop shape may reasonably disagree and call this
+release short of the constraint as written.
 
 ## What the platform is
 
@@ -72,12 +96,13 @@ Six components, split across two trust zones, per `docs/ARCHITECTURE.md`:
 - **Judge Agent** (`redteam/agents/judge.py`) — independently scores each
   target response against a case's success criteria; the trust boundary
   above is its defining property. The shipped Judge makes **no model
-  call** on its default path: `JudgeAgent(scorer=None)` — the only path
-  any test in `tests/redteam/test_judge_agent.py` exercises — passes
-  through the attack case's own rule-based `detect()` predicate unchanged
-  (`redteam/agents/judge.py:44-47`). Of the four agents, only the Red Team
-  is model-backed today; the Orchestrator and Documentation Agents are
-  rule-based as well.
+  call** on its default path: `JudgeAgent(scorer=None)` — the path every
+  scoring test exercises; one drift test injects a deterministic scorer
+  (`tests/redteam/test_judge_agent.py:236`, `corrupting_scorer`, to prove
+  drift detection fires) — passes through the attack case's own rule-based
+  `detect()` predicate unchanged (`redteam/agents/judge.py:44-53`). Of the
+  four agents, only the Red Team is model-backed today; the Orchestrator
+  and Documentation Agents are rule-based as well.
 - **Orchestrator Agent** — directs category coverage, budget, and
   regression triggers by reading Observability and Regression-Harness
   state.
@@ -108,7 +133,7 @@ Four owner-approved findings against the Phase 2 clinical co-pilot, pinned
 at `v2.0.0` (`docs/vuln_reports/VULN-0001.json` through `VULN-0004.json`).
 Per this project's rules of engagement (single-draw honesty — state sample
 size), each finding's draw count is: VULN-0001, VULN-0002, and VULN-0003
-each reproduced **3/3** on independent recorded draws
+each reproduced **3/3** on independent recorded draws (temperature 0)
 (`evals/recordings/identity-authz-garbage-bearer-token/`,
 `evals/recordings/data-exfil-discontinued-med-marked-verified/`,
 `evals/recordings/data-exfil-sourceref-topical-irrelevance/`); VULN-0004 is
@@ -133,18 +158,25 @@ measured.
 Full detail, clinical-impact framing, and remediation guidance for each is
 in `docs/TRIAGE_LAB.md` (TRI-001, TRI-002, TRI-003, TRI-014) and the
 owner-approved `docs/vuln_reports/VULN-000{1,2,3,4}.json` records — the
-latter are 13-field structured artifacts (`schema_version`, `report_id`,
+latter are 14-field structured artifacts (`schema_version`, `report_id`,
 `exploit_id`, `severity`, `clinical_impact`, `observed`, `expected`,
 `remediation`, `fix_validation_status`, `requires_human_gate`, `filed_at`,
-`approved_at`, `approved_by`), each field a one-sentence summary rather
-than a narrative; VULN-0002 and VULN-0003 share the same root cause and
-therefore an identical `clinical_impact` and `remediation` text. `TRIAGE_LAB.md`
-is where the fuller narrative lives.
+`recording_ref`, `approved_at`, `approved_by`), each field a one-sentence
+summary rather than a narrative; VULN-0002 and VULN-0003 share the same
+root cause and therefore an identical `clinical_impact` and `remediation`
+text. `recording_ref` names each report's own `evals/recordings/`
+directory directly (`VULN-0001.json` → `recording_ref:
+"evals/recordings/identity-authz-garbage-bearer-token/"`, and so on) — the
+report-to-recording mapping no longer lives only in
+`docs/ATO_EVIDENCE_PACKET.md` §5.2; each report resolves its own recording
+directory, and §5.2 remains the human-readable index across all five.
+`TRIAGE_LAB.md` is where the fuller narrative lives.
 
 ## Upstream status: do these still describe Phase 2 today?
 
-Phase 2 shipped `v2.1.0` (`923fb7d`, 2026-07-25) after these findings were
-filed, adding two new deterministic verification modules
+Phase 2 shipped `v2.1.0` (`923fb7d`, 2026-07-25) after three of these four
+findings were filed (VULN-0004 was filed later the same day), adding two
+new deterministic verification modules
 (`answer_grounding.py`, `tool_call_scoping.py`) that target the same
 general failure shape VULN-0002/0003 describe. The full analysis, with
 file:line citations checked against both pinned tags, is
@@ -153,9 +185,14 @@ file:line citations checked against both pinned tags, is
 **All four findings still describe current Phase 2 (`v2.1.0`).** None is
 fixed, conditionally or otherwise:
 
-- **VULN-0001 and VULN-0004 hold unconditionally** — nothing in
-  `git diff v2.0.0..v2.1.0` touches authentication or adds any bound on
-  `ChatRequest.message`/`ConversationStore`, at any configuration.
+- **Nothing in `git diff v2.0.0..v2.1.0` changes either finding's status in
+  any configuration** — VULN-0001 remains scoped to the shipped default
+  `copilot_per_user_token_enabled=False`: with that flag `True`, a real
+  introspection validator replaces the permissive default
+  (`services/copilot-agent/app/chat.py:304-306`), a configuration this
+  release does not claim to have tested. VULN-0004 (no bound anywhere on
+  `ChatRequest.message`/`ConversationStore`) is not gated by that flag or
+  any other, so it holds regardless of configuration.
 - **VULN-0002 and VULN-0003 hold on `v2.1.0`'s default configuration**
   (both new gates default `False`), and — **computed, not executed** —
   would still be marked `verified` even with both new gates enabled. No
@@ -176,8 +213,9 @@ real, deliberate engineering: `answer_grounding.py`'s own adversarial
 review (issue #153) found its heuristic "NOT fit to enable as shipped"
 (negation-blind, short claims bypass the ratio, wrong numeric values pass
 outright), and `tool_call_scoping.py` was shipped as a "coarser,
-owner-approved alternative" after that review. Both ship default-off, with
-the in-code comment *"Default OFF: byte-identical to today."*
+owner-approved mechanism" after that review (`config.py:251`). Both ship
+default-off, with the in-code comment *"Default OFF: byte-identical to
+today."*
 
 **What was filed upstream.** All four findings are now filed as upstream
 issues, documentation only, no fix proposed or implied, consistent with
@@ -195,16 +233,35 @@ this project's rules of engagement (no production code changes from Phase
 (VULN-0003, topically irrelevant `SourceRef` verified; references upstream
 #130 and #121).
 
-**#169 and #170 record evidence against the premise upstream #130 was
-closed on.** Upstream issue #130 ("`check_source_ref`/`check_claim` have no
-content-relevance check on ordinary `SourceRef`s") was closed as "design
-question, not currently triggering" — its own 10-live-draw investigation
-did not reproduce a case where the gap actually fired. VULN-0002 and
-VULN-0003 are exactly that gap firing, reproduced 3/3 on independent
-recorded draws each. #169/#170 put that evidence on the upstream record so
-a maintainer revisiting #130 has it; this is evidence placed on the record,
-not a request or an assertion that upstream should act on it — the
-disposition of #130 remains upstream's own call.
+**#169 records evidence against the premise upstream #130 was closed on;
+#170 is a related but distinct shape.** Upstream issue #130
+("`check_source_ref`/`check_claim` have no content-relevance check on
+ordinary `SourceRef`s") was closed as "design question, not currently
+triggering" — its own 10-live-draw investigation did not reproduce a case
+where the gap actually fired, and #130's Ask scoped the motivating case
+precisely: a claim carrying **only** a structurally-valid-but-irrelevant
+`SourceRef`, with **no** `DocumentCitation` at all. Checked against the
+recordings field-for-field: **VULN-0002's recording matches that shape
+exactly** (`document_citations: []` on the offending claim — only the
+`name`/`status: "discontinued"` `SourceRef`), so #169 puts direct evidence
+of #130's precise gap on the record. **VULN-0003's recording does not** —
+its offending claim carries the topically-irrelevant `status: "scheduled"`
+`SourceRef` **alongside** a real `guideline_chunk` `DocumentCitation`
+(`evals/recordings/data-exfil-sourceref-topical-irrelevance/20260722T054922Z-draw1.json`),
+which is the *other* shape #130's body pre-emptively described and
+dismissed as "harmless today, since the claim's `passed` status is
+grounded by the real citation regardless." #170 makes the argument that
+this dismissal does not actually hold for this shape: the "real" citation
+is a hypertension-guideline chunk about follow-up cadence in general — it
+states general clinical practice and cannot attest that *this* patient's
+blood pressure was elevated at *their* last visit. On that reading, the
+patient-specific claim is grounded by neither citation, and #130's
+"grounded by the real citation regardless" premise does not hold for the
+alongside-a-DocumentCitation shape either. #169/#170 put this evidence and
+this argument on the upstream record so a maintainer revisiting #130 has
+them; this is evidence and argument placed on the record, not a request or
+an assertion that upstream should act on it — the disposition of #130
+remains upstream's own call.
 
 ## Honest limitations
 
@@ -232,12 +289,17 @@ These carry equal prominence to the findings above, not an afterthought.
   issue #68 tracked is closed (P3.34).** `docs/ATO_EVIDENCE_PACKET.md` §5.2
   now covers all five `evals/recordings/` directories, including
   VULN-0004. One property from that issue remains true and is stated here
-  as a property, not an open gap: `exploit_id` join keys
-  (`EXP-0001`–`EXP-0004`) resolve only within a running process's
+  precisely, not as an open gap: `exploit_id` join keys
+  (`EXP-0001`–`EXP-0004`) still resolve only within a running process's
   in-memory `ExploitDB` (or a `--db-path`-persisted one, P3.31) — there is
-  no separate, always-on queryable store outside a campaign run. The
-  durable evidence of record is the recordings under `evals/recordings/`
-  and the filed report JSON itself.
+  no separate, always-on queryable store outside a campaign run that
+  resolves an `exploit_id` on its own. The evidence itself, however, no
+  longer depends on that join: each vuln report JSON now carries its own
+  `recording_ref` field naming its `evals/recordings/` directory directly
+  (P3.37), so a reader can go from report to recording without resolving
+  `exploit_id` through any store at all. What remains true is narrower than
+  before: `exploit_id` alone doesn't resolve outside a live process; the
+  evidence trail from report to recording does.
 - **A structural detector blind spot, not a bug.**
   `evals/cases/dos_input_bound.py::detect` is a genuinely black-box
   observer: a `200`-with-answer response is indistinguishable, from
@@ -277,8 +339,8 @@ These carry equal prominence to the findings above, not an afterthought.
   combination rather than risk the collision.
 - **The test count is environment-dependent — state both, never a bare
   number.** With the Phase 2 sibling checkout present (this development
-  environment), the full suite is `405 passed`. In CI, which never checks
-  out the sibling, the same suite is `299 passed, 106 skipped` — the 106
+  environment), the full suite is `435 passed`. In CI, which never checks
+  out the sibling, the same suite is `329 passed, 106 skipped` — the 106
   skips are exactly the citation-verification tests that require reading
   the pinned target's source (`TestTraceCitationsAgainstPinnedTarget`,
   `TestCitationsAgainstPinnedTargets`, and the CLAUDE.md target-path

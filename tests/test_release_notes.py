@@ -341,3 +341,153 @@ def test_release_notes_test_counts_are_not_stale_p3_29_numbers():
     text = _text()
     assert "360 passed" not in text
     assert "254 passed" not in text
+
+
+def test_release_notes_quotes_the_full_kickoff_hard_constraint():
+    """Final overclaim review, correction 1: planning/KICKOFF_PROMPT.md's
+    HARD CONSTRAINT sentence 'A single-agent or linear pipeline FAILS the
+    assignment' is the most adverse sentence in the verbatim quote and must
+    not be silently dropped -- the notes themselves describe run_campaign
+    as calling components in turn inside a single loop, which is exactly
+    what a grader would call a linear pipeline."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "single-agent or linear pipeline FAILS the assignment" in normalized
+    kickoff = (REPO_ROOT / "planning" / "KICKOFF_PROMPT.md").read_text(encoding="utf-8")
+    assert "single-agent or linear pipeline FAILS the assignment" in " ".join(
+        kickoff.split()
+    )
+
+
+def test_release_notes_does_not_call_the_parenthesised_mechanism_an_aside():
+    """The kickoff brief's '(separate process/context)' is the HARD
+    CONSTRAINT's own definition of architectural independence, not a
+    parenthetical aside -- the notes must not describe it with a framing
+    ('the parenthesised mechanism') that minimises it as incidental."""
+    text = _text()
+    assert "the parenthesised mechanism" not in text.lower()
+
+
+def test_release_notes_does_not_claim_73_tracks_the_gap_as_open():
+    """Final overclaim review, correction 2: issue #73 is CLOSED and was a
+    documentation-correction issue -- nothing tracks implementing OS-process
+    isolation. The notes must not say the gap 'is tracked' by #73 as an
+    open tracking item; they must say it is not currently scheduled."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "is tracked separately (issue #73)" not in normalized
+    assert "is tracked (issue #73)" not in normalized
+    assert "not currently scheduled" in normalized.lower()
+
+
+def test_release_notes_vuln_reports_are_14_field_artifacts_with_recording_ref():
+    """Consequence of merged #77/#79: vuln reports gained a 14th field,
+    recording_ref, pointing each report at its own evals/recordings/
+    directory. The notes' '13-field' enumeration is stale."""
+    text = _text()
+    report = json.loads((VULN_REPORTS_DIR / "VULN-0001.json").read_text(encoding="utf-8"))
+    assert "recording_ref" in report
+    assert len(report) == 14
+    assert "14-field" in text
+    assert "recording_ref" in text
+    assert "13-field" not in text
+
+
+def test_release_notes_each_report_names_its_own_recording_directory():
+    """With recording_ref on every report, the report-to-recording mapping
+    no longer lives only in ATO §5.2 -- each report now names its own
+    recording directory; §5.2 remains the human-readable index, not the
+    sole resolution path."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "recording_ref" in normalized
+
+
+def test_release_notes_scopes_the_130_claim_to_vuln_0002():
+    """Final overclaim review, correction 3: upstream #130's Ask scoped its
+    case to a claim carrying ONLY an irrelevant SourceRef with no
+    DocumentCitation. Only VULN-0002's recording matches that shape
+    (document_citations: []); VULN-0003's recording carries the SourceRef
+    alongside a real guideline_chunk DocumentCitation -- the shape #130's
+    body pre-emptively called 'harmless today'. The notes must not claim
+    both findings are 'exactly that gap firing'."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "VULN-0002 and VULN-0003 are exactly that gap firing" not in normalized
+    assert "document_citations" in normalized or "DocumentCitation" in normalized
+    assert "VULN-0002" in normalized.split("#130")[-1][:400] or "VULN-0002" in normalized.split(
+        "#130"
+    )[0][-400:]
+
+
+def test_release_notes_scopes_vuln_0001_to_the_shipped_default():
+    """Final overclaim review, correction 4: VULN-0001 is default-
+    configuration-only -- with copilot_per_user_token_enabled=True a real
+    introspection validator replaces the permissive default. 'holds
+    unconditionally ... at any configuration' is false for VULN-0001."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "VULN-0001 and VULN-0004 hold unconditionally" not in normalized
+    assert "copilot_per_user_token_enabled=False" in normalized
+
+
+def test_release_notes_scopes_the_scorer_none_claim_correctly():
+    """Final overclaim review, correction 5: JudgeAgent(scorer=None) is not
+    the only path any test exercises -- test_judge_agent.py:236 constructs
+    JudgeAgent(scorer=corrupting_scorer) for a drift test."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert (
+        "the only path any test in tests/redteam/test_judge_agent.py exercises"
+        not in normalized
+    )
+    assert "drift test" in normalized.lower() or "drift-detection" in normalized.lower()
+
+
+def test_release_notes_qualifies_the_v210_filed_after_claim():
+    """Non-blocking correction 6: VULN-0004 was filed after the v2.1.0 tag
+    was created; the other three were filed before it. 'after these
+    findings were filed' (unqualified) is false for VULN-0004."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "three of these four findings were filed" in normalized
+    assert "VULN-0004 was filed later the same day" in normalized
+
+
+def test_release_notes_cites_the_correct_scorer_none_line_range():
+    """Non-blocking correction 7: judge.py:44-47 is mis-ranged for the
+    scorer=None claim; the scorer-seam docstring paragraph is :44-53."""
+    text = _text()
+    assert "judge.py:44-53" in text
+    judge_src = (REPO_ROOT / "redteam" / "agents" / "judge.py").read_text(encoding="utf-8")
+    lines = judge_src.splitlines()
+    assert "scorer seam" in lines[43].lower()
+    assert "exercises directly" in lines[52].lower()
+
+
+def test_release_notes_does_not_overstate_red_team_scan_symmetry():
+    """Non-blocking correction 8: the Judge-side AST scan resolves relative
+    imports; the Red-Team-side scan checks absolute module paths only, so
+    'from .judge import X' would pass it undetected. 'the same way' claims
+    symmetry that does not hold."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "scans redteam/agents/red_team.py the same way" not in normalized
+    assert "relative import" in normalized.lower()
+
+
+def test_release_notes_states_temperature_zero_on_the_draw_counts():
+    """Non-blocking correction 9: upstream filings carry '3/3 ... at
+    temperature 0'; the notes drop the temperature qualifier."""
+    text = _text()
+    assert "temperature 0" in text.lower()
+
+
+def test_release_notes_does_not_substitute_a_word_inside_the_quote():
+    """Non-blocking correction 10: the upstream source word
+    (config.py:251) is 'mechanism', not 'alternative' -- a substituted word
+    must not appear inside quote marks attributed to upstream."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "coarser, owner-approved alternative" not in normalized
+    assert "coarser, owner-approved mechanism" in normalized
