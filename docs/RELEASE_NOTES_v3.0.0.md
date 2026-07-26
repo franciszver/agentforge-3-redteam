@@ -162,13 +162,20 @@ These carry equal prominence to the findings above, not an afterthought.
   top of each campaign iteration, so a single-iteration run's own events
   are never exported. `tools/run_campaign.py` uses in-memory
   `ExploitDB`/`ActionLog`/`DocumentationAgent` stores and has no `approve`
-  subcommand. Sharpest consequence: `DocumentationAgent.approve()` cannot
-  be exercised across a process restart in practice — approving VULN-0004
-  required a bespoke reconstruction script
-  (`tools/approve_vuln_0004.py`) that re-derives the pending report's
-  `ExploitRecord` from the original builder function rather than calling
-  `approve()` on a live agent, because the agent that originally filed it
-  had already exited.
+  subcommand. Sharpest consequence: a report left pending by a process that
+  has since exited cannot be approved directly — there is no live agent
+  instance still holding it in memory, and no CLI `approve` subcommand to
+  reattach to one. Approving VULN-0004 required first reconstructing that
+  in-memory state (`tools/approve_vuln_0004.py`): it re-derives the exact
+  same `ExploitRecord` from the original builder function, re-drives
+  `file_report(force_human_gate=True)` on a fresh `DocumentationAgent`, and
+  compares the result field-for-field against the already-committed
+  pending artifact, refusing on any drift — only then does it call
+  `DocumentationAgent.approve()`, the platform's one real code path for a
+  pending report becoming filed. Every field in the committed
+  `VULN-0004.json` came from `build_vuln_report()`/`approve()`, not from
+  hand-editing; the gap this issue tracks is that `approve()` needed a
+  bespoke reconstruction step to reach at all, not that it was bypassed.
 - **The ATO evidence packet's evidence index has known gaps (issue #68,
   open).** `docs/ATO_EVIDENCE_PACKET.md` §5.2 does not mention VULN-0004
   despite being cross-referenced for it elsewhere in the same document, and
