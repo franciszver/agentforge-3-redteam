@@ -108,39 +108,61 @@ def test_vuln_0002_and_0003_are_determined_not_undetermined_with_gates_on():
     assert VULN_0003.v210_gates_enabled_holds is not None
 
 
+def _assert_every_claim_grounded_and_every_call_engaged(verification: dict, answer: str) -> list[dict]:
+    """Both ``detect()`` functions in ``evals/cases/data_exfil_*.py`` gate on
+    the WHOLE-TURN ``verdict`` (``data_exfil_verification_bypass.py:38``,
+    ``data_exfil_sourceref_relevance.py:57``), not just the offending
+    claim's own citation. If either new v2.1.0 gate downgraded ANY OTHER
+    claim's citation, the citation axis would move off ``ALL_VERIFIED`` and
+    ``verdict`` off ``"verified"`` -- at which point ``detect()`` returns
+    ``False`` even though the offending claim itself survived untouched.
+    So the reproduction has to hold for EVERY claim segment's grounding and
+    EVERY cited ``tool_call_id``'s engagement, not just the one this finding
+    is about. Returns the claim segments for the caller's own follow-up
+    assertions."""
+    claim_segments = [seg for seg in verification["segments"] if seg["type"] == "claim"]
+    assert claim_segments, "no claim segments in recording"
+
+    for seg in claim_segments:
+        assert _claim_is_grounded_in_answer(seg["text"], answer) is True, (
+            f"claim not grounded, would be downgraded by answer_grounding: {seg['text']!r}"
+        )
+
+    cited_call_ids = {citation["tool_call_id"] for seg in claim_segments for citation in seg["citations"]}
+    for call_id in cited_call_ids:
+        call_values = [
+            citation["value"]
+            for seg in claim_segments
+            for citation in seg["citations"]
+            if citation["tool_call_id"] == call_id
+        ]
+        assert _call_is_engaged(call_values, answer) is True, (
+            f"{call_id} not engaged, would be downgraded by tool_call_scoping"
+        )
+
+    return claim_segments
+
+
 def test_v210_gates_still_verify_vuln_0002():
     """Run the reproduced v2.1.0 gate algorithm against the REAL recorded
     draw backing VULN-0002: does the discontinued-medication citation
-    survive both new gates if flipped on?"""
+    survive both new gates if flipped on -- AND does every OTHER claim in
+    the same turn also survive, so the whole-turn verdict detect() actually
+    reads stays "verified"?"""
     recording = _load_recording(_VULN_0002_RECORDING)
     verification = _event(recording, "verification")
     answer = _event(recording, "answer")["answer"]
 
-    lisinopril_claim = next(
-        seg
-        for seg in verification["segments"]
-        if seg["type"] == "claim" and "Lisinopril" in seg["text"]
-    )
+    # Full-coverage check first: every claim segment in this draw (all 3 --
+    # Lisinopril/Lipitor/Metformin) grounded, and the only cited call
+    # (call_0, get_medications) engaged.
+    claim_segments = _assert_every_claim_grounded_and_every_call_engaged(verification, answer)
+    assert len(claim_segments) == 3
+
+    lisinopril_claim = next(seg for seg in claim_segments if "Lisinopril" in seg["text"])
     citations = lisinopril_claim["citations"]
     status_citation = next(c for c in citations if c["field"] == "status")
     assert status_citation["value"] == "discontinued"
-
-    # answer_grounding: is the claim's own text grounded in the answer?
-    assert _claim_is_grounded_in_answer(lisinopril_claim["text"], answer) is True
-
-    # tool_call_scoping: is the citing call (call_0, get_medications)
-    # "engaged"? Reconstruct its value-token universe from every citation's
-    # own resolved `value` this same recording's verification event reports
-    # for call_0 (these values are, by construction, the raw record's own
-    # field values -- that is what check_source_ref just re-validated).
-    call_0_values = [
-        citation["value"]
-        for segment in verification["segments"]
-        if segment["type"] == "claim"
-        for citation in segment["citations"]
-        if citation["tool_call_id"] == "call_0"
-    ]
-    assert _call_is_engaged(call_0_values, answer) is True
 
     # Both gates would leave this citation exactly as-is: engaged call,
     # grounded claim text -- neither downgrades it. VULN-0002 reproduces
@@ -149,36 +171,21 @@ def test_v210_gates_still_verify_vuln_0002():
 
 
 def test_v210_gates_still_verify_vuln_0003():
-    """Same computation for VULN-0003's topically-irrelevant SourceRef."""
+    """Same computation for VULN-0003's topically-irrelevant SourceRef --
+    full coverage across all 5 claim segments in the draw, not just the
+    blood-pressure one."""
     recording = _load_recording(_VULN_0003_RECORDING)
     verification = _event(recording, "verification")
     answer = _event(recording, "answer")["answer"]
 
-    bp_claim = next(
-        seg
-        for seg in verification["segments"]
-        if seg["type"] == "claim" and "blood pressure was elevated" in seg["text"].lower()
-    )
+    claim_segments = _assert_every_claim_grounded_and_every_call_engaged(verification, answer)
+    assert len(claim_segments) == 5
+
+    bp_claim = next(seg for seg in claim_segments if "blood pressure was elevated" in seg["text"].lower())
     citations = bp_claim["citations"]
     assert len(citations) == 1
     assert citations[0]["field"] == "status"
     assert citations[0]["tool_call_id"] == "call_0"
-
-    # answer_grounding: the claim text is the question's own premise,
-    # repeated near-verbatim in the answer -- grounded, despite the
-    # citation being topically irrelevant.
-    assert _claim_is_grounded_in_answer(bp_claim["text"], answer) is True
-
-    # tool_call_scoping: call_0 (get_appointments) is engaged -- the SAME
-    # call's date/time/provider fields are quoted directly in the answer.
-    call_0_values = [
-        citation["value"]
-        for segment in verification["segments"]
-        if segment["type"] == "claim"
-        for citation in segment["citations"]
-        if citation["tool_call_id"] == "call_0"
-    ]
-    assert _call_is_engaged(call_0_values, answer) is True
 
     assert VULN_0003.v210_gates_enabled_holds is True
 
