@@ -1,10 +1,5 @@
 # AgentForge Phase 3 — Adversarial Security & Red-Team Platform — v3.0.0
 
-**Status: DRAFT.** These are the release notes the owner will review and,
-if approved, publish as the `v3.0.0` GitHub Release — the **first tag in
-this repository**. Nothing here has been tagged or published; this file is
-the proposal.
-
 ## The differentiator: attack generation and grading are separated, and the separation is enforced by a test, not a convention
 
 The Red Team Agent (which attacks) and the Judge Agent (which grades) are
@@ -42,13 +37,22 @@ Six components, split across two trust zones, per `docs/ARCHITECTURE.md`:
 - **Red Team Agent** (`redteam/agents/red_team.py`) — generates and mutates
   adversarial probes. Runs on a local, CPU-only, abliterated model
   (`DEFAULT_MODEL = "huihui_ai/qwen2.5-abliterate:7b"`), swappable via
-  config, chosen specifically because a safety-tuned model (`gemma4:e4b`
-  was measured and refused outright) over-refuses its own job as an
-  attacker, which would silently cap attack-suite coverage at whatever it
-  was willing to write.
+  config, chosen specifically because a safety-tuned model (`gemma4:e4b`)
+  was measured locally and refused outright, over-refusing its own job as
+  an attacker, which would silently cap attack-suite coverage at whatever
+  it was willing to write. That comparison was measured locally during
+  development and recorded in this project's (gitignored) internal
+  decision log, not in this repo — it is not independently reproducible
+  from what's committed here.
 - **Judge Agent** (`redteam/agents/judge.py`) — independently scores each
   target response against a case's success criteria; the trust boundary
-  above is its defining property.
+  above is its defining property. The shipped Judge makes **no model
+  call** on its default path: `JudgeAgent(scorer=None)` — the only path
+  any test in `tests/redteam/test_judge_agent.py` exercises — passes
+  through the attack case's own rule-based `detect()` predicate unchanged
+  (`redteam/agents/judge.py:44-47`). Of the four agents, only the Red Team
+  is model-backed today; the Orchestrator and Documentation Agents are
+  rule-based as well.
 - **Orchestrator Agent** — directs category coverage, budget, and
   regression triggers by reading Observability and Regression-Harness
   state.
@@ -102,8 +106,15 @@ measured.
 | **VULN-0004** | Medium | `/chat`'s `message` field carries no length bound anywhere in the stack, and `ConversationStore` (`chat.py:570-594`) never evicts, TTLs, or caps retained conversations — accepted-and-unbounded, not rejected-and-cheap. |
 
 Full detail, clinical-impact framing, and remediation guidance for each is
-in `docs/vuln_reports/VULN-000{1,2,3,4}.json` and `docs/TRIAGE_LAB.md`
-(TRI-001, TRI-002, TRI-003, TRI-014).
+in `docs/TRIAGE_LAB.md` (TRI-001, TRI-002, TRI-003, TRI-014) and the
+owner-approved `docs/vuln_reports/VULN-000{1,2,3,4}.json` records — the
+latter are 13-field structured artifacts (`schema_version`, `report_id`,
+`exploit_id`, `severity`, `clinical_impact`, `observed`, `expected`,
+`remediation`, `fix_validation_status`, `requires_human_gate`, `filed_at`,
+`approved_at`, `approved_by`), each field a one-sentence summary rather
+than a narrative; VULN-0002 and VULN-0003 share the same root cause and
+therefore an identical `clinical_impact` and `remediation` text. `TRIAGE_LAB.md`
+is where the fuller narrative lives.
 
 ## Upstream status: do these still describe Phase 2 today?
 

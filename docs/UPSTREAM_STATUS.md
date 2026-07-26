@@ -7,8 +7,8 @@
   upstream-recheck status. The four `VULN-000{1,2,3,4}.json` reports are
   owner-approved artifacts (`approved_by`/`approved_at` already set) —
   hand-adding a field would either fail schema validation or silently widen
-  an approved contract without a fresh approval. Per the implementation
-  brief this work was dispatched under (not issue #58's own public body,
+  an approved contract without a fresh approval. Per this project's
+  internal working notes for this task (not issue #58's own public body,
   which does not say this), that is a STOP-and-ask condition, not a place
   to improvise: this document is the safe alternative, with a pointer added
   to each finding's existing narrative home instead (`docs/TRIAGE_LAB.md`'s

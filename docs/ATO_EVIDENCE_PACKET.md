@@ -272,8 +272,7 @@ level. The other three roles are deterministic and call no model at all
 | Role | Runtime | Model | Verified where |
 |---|---|---|---|
 | Red Team Agent generator | ollama, `http://localhost:11434`, **CPU-only** (`num_gpu: 0`, hardcoded default) | `huihui_ai/qwen2.5-abliterate:7b` | `redteam/agents/red_team.py` `DEFAULT_MODEL` constant + module docstring: validated to comply with offensive-security generation, ~7s/call, CPU-only |
-| Judge / Orchestrator / Documentation Agents | none -- deterministic Python, no model instance, no model call, in the same process as every other role | N/A in the shipped default path; each exposes an optional model-backed seam (`scorer`/`ranker`/`narrator`) that a stock instruct model could later fill (no uncensored requirement -- none of the three is a generation-under-refusal-pressure task) | `docs/ARCHITECTURE.md` §4 |
-| Target's answer model | GPU-resident, target's own container | 8B-Q5 quantized model | `docs/STAGE1_TARGET.md` §1/§6, `nvidia-smi` confirms ~7.8/12 GB VRAM resident |
+| Judge / Orchestrator / Documentation Agents | none -- deterministic Python, no model instance, no model call, in the same process as every other role | N/A in the shipped default path; each exposes an optional model-backed seam (`scorer`/`ranker`/`narrator`) that a stock instruct model could later fill (no uncensored requirement -- none of the three is a generation-under-refusal-pressure task) | `docs/ARCHITECTURE.md` §4 || Target's answer model | GPU-resident, target's own container | 8B-Q5 quantized model | `docs/STAGE1_TARGET.md` §1/§6, `nvidia-smi` confirms ~7.8/12 GB VRAM resident |
 | Target's document-ingestion VLM | ollama-only, GPU when loaded | `qwen2.5vl:7b` | `planning/PHASE3_KICKOFF_PROMPT.md` (cited by `docs/ARCHITECTURE.md`) |
 
 **One honestly-flagged discrepancy between the design doc and the shipped
@@ -326,9 +325,9 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **392 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **375 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **286 passed, 106 skipped** in CI
+present locally (confirmed at PR time); **269 passed, 106 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
 not check it out, so the 100 total sibling-checkout citation cases
 class-skip cleanly there: 40 `TestTraceCitationsAgainstPinnedTarget` cases
@@ -373,7 +372,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **392 passing tests (286 passed, 106 skipped in CI), no live/network/GPU
+- **375 passing tests (269 passed, 106 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -395,18 +394,17 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 392
-  with the sibling checkout present, or 286 passed / 106 skipped without
+  changes plus its expanded citation-verification test set move it to 375
+  with the sibling checkout present, or 269 passed / 106 skipped without
   it, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 392-test suite (286 in CI)
-
-`pytest tests/ -q` → **392 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **286 passed, 106 skipped**
+### 5.1 The 375-test suite (269 in CI)
+`pytest tests/ -q` → **375 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **269 passed, 106 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -418,17 +416,7 @@ any case (§4.2).
 ### 5.2 The three owner-approved critical vuln reports, plus VULN-0004
 
 All three criticals are reproducible from `evals/recordings/` and filed as
-structured, schema-valid JSON under `docs/vuln_reports/`. As of issue #77
-(P3.36), every filed report also names its own evidence directly: each
-`docs/vuln_reports/VULN-000N.json` carries an optional `recording_ref`
-field (`contracts/v1/vuln_report.schema.json`) pointing at the same
-directory this table lists, computed deterministically by
-`build_vuln_report()` from the source exploit record's `case_id` —
-`f"evals/recordings/{case_id}/"`, never hand-typed. The table below
-remains the human-readable index across all four findings in one place
-(and the only place a per-recording draw count is spelled out), but a
-reader no longer has to cross-reference it just to find one report's own
-evidence:
+structured, schema-valid JSON under `docs/vuln_reports/`:
 
 | Report | Exploit ID | Label | Recording (sample size) |
 |---|---|---|---|
@@ -528,9 +516,8 @@ to approve and nothing already filed.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 392 total with the sibling checkout present,
-  or 286 passed / 106 skipped without it, §5.1).
-
+  the repo has since grown to 375 total with the sibling checkout present,
+  or 269 passed / 106 skipped without it, §5.1).
 ### 5.4 Load-test numbers
 
 Full detail in `docs/LOAD_TEST.md`; headline figures, MEASURED (not
@@ -649,8 +636,8 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (392 tests with the sibling checkout
-  present / 286 passed, 106 skipped in CI, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (375 tests with the sibling checkout
+  present / 269 passed, 106 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
