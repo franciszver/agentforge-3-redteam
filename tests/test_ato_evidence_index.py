@@ -61,6 +61,27 @@ def _section_5_2_text() -> str:
     return match.group(0)
 
 
+def _unqualified_claims(
+    normalized_text: str,
+    claim_re: "re.Pattern[str]",
+    qualifier_re: "re.Pattern[str]",
+    window: int,
+) -> list[str]:
+    """Every ``claim_re`` match in ``normalized_text`` that has no
+    ``qualifier_re`` hit within ``window`` characters on either side --
+    shared by the docstring-claim guards below (Part B's join-key claim,
+    Part C's repro-steps claim), which both need "flag this phrasing
+    unless a qualifying/negating phrase sits nearby" rather than a bare
+    presence/absence check."""
+    violations = []
+    for match in claim_re.finditer(normalized_text):
+        start = max(0, match.start() - window)
+        end = min(len(normalized_text), match.end() + window)
+        if not qualifier_re.search(normalized_text[start:end]):
+            violations.append(normalized_text[match.start():match.end()])
+    return violations
+
+
 def test_every_recording_directory_is_referenced_in_section_5_2():
     section = _section_5_2_text()
     recording_dirs = sorted(p.name for p in _RECORDINGS_DIR.iterdir() if p.is_dir())
@@ -150,13 +171,9 @@ _JOIN_KEY_WINDOW = 600
 def test_documentation_agent_docstring_does_not_claim_a_resolvable_exploit_db():
     text = (REPO_ROOT / "redteam" / "agents" / "documentation.py").read_text(encoding="utf-8")
     normalized = " ".join(text.split())
-    violations = []
-    for match in _JOIN_KEY_CLAIM_RE.finditer(normalized):
-        start = max(0, match.start() - _JOIN_KEY_WINDOW)
-        end = min(len(normalized), match.end() + _JOIN_KEY_WINDOW)
-        window = normalized[start:end]
-        if not _IN_PROCESS_QUALIFIER_RE.search(window):
-            violations.append(normalized[match.start():match.end()])
+    violations = _unqualified_claims(
+        normalized, _JOIN_KEY_CLAIM_RE, _IN_PROCESS_QUALIFIER_RE, _JOIN_KEY_WINDOW
+    )
 
     assert not violations, (
         "redteam/agents/documentation.py describes exploit_id as a join key "
@@ -211,12 +228,9 @@ def test_documentation_agent_docstring_does_not_claim_reports_self_document_evid
         f"report-to-recording mapping lives only in ATO §5.2:\n{self_named_violations}"
     )
 
-    repro_steps_violations = []
-    for match in _UNQUALIFIED_REPRO_STEPS_RE.finditer(normalized):
-        start = max(0, match.start() - _NEGATION_WINDOW)
-        window = normalized[start:match.end()]
-        if not _NEGATION_NEARBY_RE.search(window):
-            repro_steps_violations.append(match.group(0))
+    repro_steps_violations = _unqualified_claims(
+        normalized, _UNQUALIFIED_REPRO_STEPS_RE, _NEGATION_NEARBY_RE, _NEGATION_WINDOW
+    )
     assert not repro_steps_violations, (
         "redteam/agents/documentation.py claims observed/expected 'carry "
         "the repro steps' without qualification -- VULN-0001.json's "
