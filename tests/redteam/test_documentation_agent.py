@@ -445,6 +445,54 @@ def test_approve_removes_the_actual_source_path_not_a_report_id_guess(tmp_path):
     assert (tmp_path / "VULN-0001.json").exists()
 
 
+def test_recording_ref_derives_from_the_records_own_ref_not_case_id():
+    """Cold-review FIX 1 (issue #77 follow-up): for a campaign-generated
+    attempt, ``exploit_record["case_id"]`` is ``verdict["case_id"]`` (the
+    matched ``AttackCase.id``), but the recording on disk is written under
+    ``attempt["case_id"]`` -- for a ``category_random``/``mutation_of``
+    selector that is a FABRICATED id
+    (``redteam-gen-<category>-<uuid>`` / ``<prior>-mut-<hex>``,
+    redteam/agents/red_team.py:529,546), never the matched case's id.
+    ``campaign.py`` already stores the record's OWN correct
+    ``recording_ref`` (``str(recording_path)`` from ``record_run``,
+    campaign.py:390-409) -- ``build_vuln_report`` must derive the report's
+    ``recording_ref`` from THAT field, not re-derive a path from
+    ``case_id`` that a fabricated-id attempt will get wrong."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["case_id"] = "dos-overlong-query-max-query-chars"  # the matched AttackCase.id
+    record["recording_ref"] = (
+        "evals/recordings/redteam-gen-denial-of-service-81fc3b09-0000-0000-0000-000000000000/"
+        "20260722T031540Z-draw1.json"
+    )
+    report = build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+    assert report["recording_ref"] == (
+        "evals/recordings/redteam-gen-denial-of-service-81fc3b09-0000-0000-0000-000000000000/"
+    )
+    assert record["recording_ref"].startswith(report["recording_ref"])
+
+
+def test_recording_ref_derivation_rejects_an_underscored_recording_directory():
+    """A record whose real recording directory name is not schema-valid
+    (e.g. underscored) must fail loudly rather than derive an invalid
+    report recording_ref -- this is the failure mode red_team.py's
+    hyphenated fabrication (see test_red_team_agent.py) exists to prevent
+    in practice."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "evals/recordings/redteam_gen_bad/20260722T031540Z-draw1.json"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
+def test_recording_ref_derivation_rejects_a_ref_outside_evals_recordings():
+    """A record whose own ``recording_ref`` does not resolve under
+    ``evals/recordings/`` must fail loudly, not silently produce a
+    schema-shaped-but-wrong path."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "tmp/somewhere-else/draw1.json"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
 def test_all_categories_map_to_a_valid_severity_and_pass_schema():
     for category in (
         "prompt_injection",

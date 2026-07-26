@@ -124,10 +124,18 @@ see ``contracts/README.md``'s versioning log) is a directory under
 bearer-token/"``, trailing slash, no filename) containing the committed,
 replayable draw(s) backing the finding. ``build_vuln_report`` computes it
 deterministically from the source exploit record's own required
-``case_id`` field -- ``f"evals/recordings/{case_id}/"`` -- the same
-``<case_id>``-as-directory-name convention
-``tools/build_vuln_reports.py::_load_recordings`` already relies on; it is
-never hand-typed onto a report, and a narrator cannot override it (see
+``recording_ref`` field (see ``_recording_ref_for``): the record's
+``recording_ref`` -- set by ``campaign.py`` from the actual path
+``record_run`` wrote the recording to -- is relativised to the repo root and
+its filename stripped, leaving the containing directory. This is
+deliberately NOT re-derived from ``case_id``: a live campaign's
+``category_random``/``mutation_of`` attempts record under a fabricated id
+(``attempt["case_id"]``) that can diverge from the exploit record's own
+``case_id`` (``verdict["case_id"]``, the matched ``AttackCase.id`` --
+cold-review FIX 1, issue #77 follow-up), so reconstructing
+``evals/recordings/<case_id>/`` from ``case_id`` alone can silently point at
+the wrong directory. It is never hand-typed onto a report, and a narrator
+cannot override it (see
 ``_NARRATOR_PROTECTED_FIELDS`` below -- letting prose-polishing logic
 repoint a reader at the wrong evidence would defeat the whole point of the
 field). A filed ``docs/vuln_reports/<report_id>.json`` now resolves to its
@@ -145,6 +153,7 @@ JSON under the report's own ``recording_ref``.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -303,6 +312,61 @@ def _report_id_for(exploit_id: str) -> str:
     return "VULN-" + exploit_id.split("-", 1)[1]
 
 
+_RECORDING_DIR_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\Z")
+
+
+def _recording_ref_for(exploit_record: Mapping[str, Any]) -> str:
+    """Derive the report's ``recording_ref`` from the exploit record's OWN
+    ``recording_ref`` (the directory containing it), never re-derived from
+    ``case_id``.
+
+    Cold-review FIX 1 (issue #77 follow-up): ``campaign.py`` sets a
+    confirmed exploit record's ``case_id`` to ``verdict["case_id"]`` (the
+    matched ``AttackCase.id``), while the recording on disk is written under
+    ``attempt["case_id"]`` via ``record_run``. For a ``category_random`` or
+    ``mutation_of`` directive selector those two ids diverge -- the attempt's
+    id is a fabricated ``redteam-gen-<category>-<uuid>`` /
+    ``<prior>-mut-<hex>`` (redteam/agents/red_team.py:529,546) that never
+    equals the matched case's id. Re-deriving ``evals/recordings/<case_id>/``
+    from ``case_id`` therefore silently points a live-campaign report at the
+    WRONG recording directory. The record's own ``recording_ref`` (set from
+    ``str(recording_path)``, campaign.py:390-409) is always correct, so this
+    locates the ``recordings`` path segment (production runs under the real
+    ``evals/recordings/``; tests may point ``recordings_dir`` at a ``tmp_path``
+    whose absolute prefix is not under the repo root at all, so we cannot
+    require literal repo-root containment) and takes the directory
+    immediately under it -- a structural cross-check that the record's own
+    ``recording_ref`` really does lie under a ``recordings/<dir>/<file>``
+    layout, not merely a string transplant of ``case_id``. Raises loudly
+    (never silently) if that structure is absent or the directory name would
+    not itself be schema-valid.
+    """
+    raw_ref = _require(exploit_record, "recording_ref")
+    normalized = str(raw_ref).replace("\\", "/")
+    parts = [p for p in normalized.split("/") if p not in ("", ".")]
+    try:
+        recordings_idx = len(parts) - 1 - parts[::-1].index("recordings")
+    except ValueError:
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} has no 'recordings' "
+            "directory segment -- cannot derive a report recording_ref from it"
+        ) from None
+    # Need at least "<dir>/<file>" after the "recordings" segment.
+    if recordings_idx + 2 >= len(parts):
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} does not contain a "
+            "<dir>/<file> beneath its 'recordings' segment"
+        )
+    dir_name = parts[recordings_idx + 1]
+    if not _RECORDING_DIR_NAME_RE.match(dir_name):
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} has recording "
+            f"directory name {dir_name!r}, which is not "
+            "[a-z0-9][a-z0-9-]* -- refusing to derive an invalid report recording_ref"
+        )
+    return f"evals/recordings/{dir_name}/"
+
+
 def _require(exploit_record: Mapping[str, Any], key: str) -> Any:
     """Same exception type (``DocumentationAgentError``) as every other
     rejection this module raises -- a caller catching this module's own
@@ -340,7 +404,7 @@ def build_vuln_report(
     exploit_id = _require(exploit_record, "exploit_id")
     category = _require(exploit_record, "category")
     repro = _require(exploit_record, "minimal_repro")
-    case_id = _require(exploit_record, "case_id")
+    _require(exploit_record, "case_id")  # still a required exploit_record field; unused here (FIX 1, issue #77 follow-up)
     severity = SEVERITY_BY_CATEGORY.get(category, _DEFAULT_SEVERITY)
 
     report: dict[str, Any] = {
@@ -355,11 +419,11 @@ def build_vuln_report(
         "fix_validation_status": fix_validation_status,
         "requires_human_gate": severity == "critical" or force_human_gate,
         "filed_at": filed_at or now_iso(),
-        # Issue #77: derived from the exploit record's own case_id, the same
-        # <case_id>-as-directory-name convention every recording under
-        # evals/recordings/ already follows -- never hand-typed, never
-        # narrator-overridable (see _NARRATOR_PROTECTED_FIELDS).
-        "recording_ref": f"evals/recordings/{case_id}/",
+        # Cold-review FIX 1 (issue #77 follow-up): derived from the exploit
+        # record's OWN recording_ref (see _recording_ref_for), never from
+        # case_id -- never hand-typed, never narrator-overridable (see
+        # _NARRATOR_PROTECTED_FIELDS).
+        "recording_ref": _recording_ref_for(exploit_record),
     }
 
     if narrator is not None:

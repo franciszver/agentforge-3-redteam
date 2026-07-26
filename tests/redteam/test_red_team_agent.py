@@ -104,6 +104,25 @@ def test_generate_attempt_category_random_validates_against_contract():
     assert "prompt_injection" in fake.prompts[0]
 
 
+def test_generate_attempt_category_random_fabricated_case_id_has_no_underscore():
+    """Not one of the brief's numbered FIXes for issue #77, but required to
+    ship FIX 1 safely: this fabricated id becomes both the exploit record's
+    case_id AND (via record_run) the literal recordings/ directory name.
+    contracts/v1/vuln_report.schema.json's recording_ref pattern forbids
+    underscores, and ALLOWED_CATEGORIES entries like "denial_of_service" /
+    "tool_misuse" / "identity_authz" are underscored -- so an unsanitized
+    fabrication would make documentation.py's recording_ref derivation
+    reject every confirmed category_random finding in 5 of 6 categories."""
+    fake = FakeModelClient(responses=["a novel probe message"])
+    agent = RedTeamAgent(model_client=fake)
+    directive = _directive(category="denial_of_service", selector="category_random")
+
+    attempt = agent.generate_attempt(directive)
+
+    assert "_" not in attempt["case_id"]
+    assert attempt["case_id"].startswith("redteam-gen-denial-of-service-")
+
+
 def test_generate_attempt_category_random_prompt_is_category_appropriate():
     fake = FakeModelClient()
     agent = RedTeamAgent(model_client=fake)
