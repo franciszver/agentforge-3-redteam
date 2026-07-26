@@ -34,14 +34,27 @@ For each of the three findings below, this script:
 Usage:
 
     python tools/build_vuln_reports.py
+    python tools/build_vuln_reports.py --out-dir /path/to/scratch-dir
+
+``--out-dir`` re-targets the write location away from the default
+``docs/vuln_reports/`` -- e.g. for a reproduction check into a scratch
+directory (see ``docs/ATO_EVIDENCE_PACKET.md`` Sec. 5.2, issue #64). The
+refuse-on-approved-collision guard (Layer 1, below) still applies to
+whatever directory is targeted -- ``--out-dir`` only changes WHERE the
+script looks/writes, never whether it's willing to clobber an
+owner-approved report there. No ``--force`` escape hatch is offered: the
+smallest surface that makes the reproduction claim true is letting a
+reader aim at an empty scratch directory, not adding a way to override the
+approved-report refusal.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -168,13 +181,29 @@ def _file_finding(documentation: DocumentationAgent, record: dict[str, Any]) -> 
     )
 
 
-def main() -> int:
+def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help=(
+            "write into this directory instead of the default docs/vuln_reports/ "
+            "(e.g. a scratch dir for a reproduction check, per docs/ATO_EVIDENCE_PACKET.md "
+            "Sec. 5.2 / issue #64). The refuse-on-approved-collision guard still applies "
+            "to whatever directory is targeted."
+        ),
+    )
+    return parser.parse_args(list(argv))
+
+
+def main(argv: Sequence[str] = ()) -> int:
     """Issue #64 (P3.32): this script generates evidence, so re-running it
     must be safe for a reader trying to *verify* already-approved evidence,
     not just a one-shot generator. Two layers, composed:
 
       1. SAFETY NET -- before writing anything, check every finding's
-         target report_id against ``_REPORTS_DIR`` for an existing,
+         target report_id against the target reports dir for an existing,
          owner-approved artifact (``_approved_collisions``). If even ONE
          collides, refuse the ENTIRE run (no partial writes -- see
          ``tests/tools/test_build_vuln_reports_nondestructive.py``) and
@@ -187,8 +216,18 @@ def main() -> int:
          original ``filed_at`` -- re-running with unchanged recordings is a
          genuine no-op, which is what makes this script usable as a
          reproduction check rather than only a one-shot generator.
+
+    ``argv`` defaults to an empty tuple (NOT ``sys.argv``) so calling
+    ``main()`` directly -- as every test in
+    ``tests/tools/test_build_vuln_reports_nondestructive.py`` does, via
+    ``monkeypatch.setattr(build_vuln_reports, "_REPORTS_DIR", tmp_path)`` --
+    never accidentally parses pytest's own command-line arguments. The
+    ``if __name__ == "__main__"`` entry point below passes ``sys.argv[1:]``
+    explicitly.
     """
-    _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    args = _parse_args(argv)
+    reports_dir = args.out_dir if args.out_dir is not None else _REPORTS_DIR
+    reports_dir.mkdir(parents=True, exist_ok=True)
     db = ExploitDB(":memory:")
     documentation = DocumentationAgent(reports_dir=None)  # this script does its own explicit write below
     judge = JudgeAgent()
@@ -230,7 +269,7 @@ def main() -> int:
         # cleanly against vuln_report.schema.json on its own.
         report_body = {k: v for k, v in report.items() if k != "status"}
         suffix = "" if status == "filed" else ".pending-human-approval"
-        out_path = _REPORTS_DIR / f"{report['report_id']}{suffix}.json"
+        out_path = reports_dir / f"{report['report_id']}{suffix}.json"
 
         planned.append(
             {
@@ -249,7 +288,7 @@ def main() -> int:
     # Layer 1 -- safety net. Check EVERY target before writing ANY of them.
     blocked: list[tuple[dict[str, Any], list[Path]]] = []
     for p in planned:
-        collisions = _approved_collisions(p["report_id"], _REPORTS_DIR)
+        collisions = _approved_collisions(p["report_id"], reports_dir)
         if collisions:
             blocked.append((p, collisions))
 
@@ -307,4 +346,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
