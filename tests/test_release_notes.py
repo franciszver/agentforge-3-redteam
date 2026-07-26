@@ -377,6 +377,8 @@ def test_release_notes_does_not_claim_73_tracks_the_gap_as_open():
     normalized = " ".join(text.split())
     assert "is tracked separately (issue #73)" not in normalized
     assert "is tracked (issue #73)" not in normalized
+    assert "tracked design goal, #73" not in normalized
+    assert "design goal, #73)" not in normalized
     assert "not currently scheduled" in normalized.lower()
 
 

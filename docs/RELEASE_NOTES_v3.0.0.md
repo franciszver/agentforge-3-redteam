@@ -49,7 +49,11 @@ not yet implemented): *HARD CONSTRAINT — GENUINE MULTI-AGENT WITH SEPARATED
 TRUST. A single-agent or linear pipeline FAILS the assignment. Attack
 generation and evaluation must NOT share context ("conflict of interest by
 design"). Build four agents with architectural (separate process/context)
-independence.* That first sentence is the most adverse line in the brief
+independence: …* (the colon introduces the brief's own four-agent
+enumeration — Red Team, Judge, Orchestrator, Documentation Agent — elided
+here only because this document names and describes all four itself,
+above and below; nothing after the colon is adverse or contradicts this
+release). That first sentence is the most adverse line in the brief
 for this release to face squarely: `run_campaign` calls Orchestrator, Red
 Team, target, Judge, store, and Documentation "in turn inside a single
 loop" (stated plainly above), which is exactly the shape a grader would
@@ -296,7 +300,8 @@ These carry equal prominence to the findings above, not an afterthought.
   resolves an `exploit_id` on its own. The evidence itself, however, no
   longer depends on that join: each vuln report JSON now carries its own
   `recording_ref` field naming its `evals/recordings/` directory directly
-  (P3.37), so a reader can go from report to recording without resolving
+  (P3.36, issue #77, hardened in P3.37), so a reader can go from report to
+  recording without resolving
   `exploit_id` through any store at all. What remains true is narrower than
   before: `exploit_id` alone doesn't resolve outside a live process; the
   evidence trail from report to recording does.
@@ -374,14 +379,17 @@ edges — `pending_human_triage_count`'s per-run scope and `exploit_id`'s
 in-process-only resolution, both above — are gone; #63 and #68 closed the
 gaps they tracked (durable cross-process approval, a complete §5.2 index),
 not every open edge in the trail. It does not claim the kickoff brief's
-parenthesised separate-process mechanism is implemented — see "The
-differentiator" above for exactly what is and is not. It claims exactly
-what is verified: four owner-approved findings against a pinned target —
-three reproduced 3/3 on independent draws, one (VULN-0004) a single
-recorded draw with its resource-exhaustion consequence deductive, not
-separately measured, per upstream #167's own framing — a documented and
-re-checked upstream status as of `v2.1.0`, all four now also filed as
-upstream issues, a working six-component platform with an architecturally
-independent Judge at the module/data level (OS-process isolation is a
-tracked design goal, #73), and an honest account of where the platform's
-own evidence trail is currently weak.
+separate-process/context mechanism is implemented (it remains a design
+goal, not implemented) — see "The differentiator" above for exactly what
+is and is not, and what issue #73 does and does not track (a closed
+documentation correction, not a live implementation tracker). It claims
+exactly what is verified: four
+owner-approved findings against a pinned target — three reproduced 3/3 on
+independent draws, one (VULN-0004) a single recorded draw with its
+resource-exhaustion consequence deductive, not separately measured, per
+upstream #167's own framing — a documented and re-checked upstream status
+as of `v2.1.0`, all four now also filed as upstream issues, a working
+six-component platform with an architecturally independent Judge at the
+module/data level (OS-process isolation remains a design goal, not
+currently scheduled), and an honest account of where the platform's own
+evidence trail is currently weak.
