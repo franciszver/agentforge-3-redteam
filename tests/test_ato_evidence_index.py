@@ -5,8 +5,10 @@ follows to map each committed recording under ``evals/recordings/`` and
 each owner-approved report under ``docs/vuln_reports/`` to its evidence.
 Two defects motivated this test:
 
-1. ``:29`` cross-references §5.2 for VULN-0004, but §5.2 never mentioned
-   VULN-0004 -- a dangling pointer on the externally-facing artifact.
+1. ``:29`` cross-references §5.2 for VULN-0004's evidence, but §5.2's VULN-0004
+   mention (in a later "Re-verifying" paragraph) never described its evidence
+   -- a reader following the :29 pointer landed on a section that names
+   VULN-0004 but doesn't say what recording backs it.
 2. §5.2 said "a fourth recorded set exists" when ``evals/recordings/``
    already held five directories, and the paragraph a VULN-0004 reader
    was pointed at actually described a *different*, dismissed DoS
@@ -73,6 +75,9 @@ def test_every_recording_directory_is_referenced_in_section_5_2():
     )
 
 
+_REPORT_TO_RECORDING_WINDOW = 300
+
+
 def test_every_approved_vuln_report_is_referenced_in_section_5_2():
     section = _section_5_2_text()
     report_ids = sorted(p.stem for p in _VULN_REPORTS_DIR.glob("VULN-*.json"))
@@ -85,6 +90,37 @@ def test_every_approved_vuln_report_is_referenced_in_section_5_2():
         "docs/vuln_reports/ must be named in §5.2, not just the three "
         "criticals, or a reader following the cross-reference at :29 lands "
         "on a section that never mentions the finding they were sent to find"
+    )
+
+
+def test_every_approved_vuln_report_co_occurs_with_its_recording_in_section_5_2():
+    """Stronger than merely appearing in §5.2 (above): a report ID being
+    named is not the same as its evidence being described. This was the
+    actual :29 defect -- §5.2 named VULN-0004 (in the "Re-verifying"
+    paragraph) without ever saying what recording backs it. Require each
+    report ID to occur near an ``evals/recordings/`` path, not just
+    anywhere in the section."""
+    section = _section_5_2_text()
+    report_ids = sorted(p.stem for p in _VULN_REPORTS_DIR.glob("VULN-*.json"))
+    assert report_ids, "docs/vuln_reports/ has no VULN-*.json reports to check against"
+
+    recording_positions = [m.start() for m in re.finditer(r"evals/recordings/", section)]
+    assert recording_positions, "§5.2 does not mention evals/recordings/ at all"
+
+    uncorroborated = []
+    for rid in report_ids:
+        positions = [m.start() for m in re.finditer(re.escape(rid), section)]
+        if not positions:
+            continue  # already flagged by the presence test above
+        nearest = min(abs(p - r) for p in positions for r in recording_positions)
+        if nearest > _REPORT_TO_RECORDING_WINDOW:
+            uncorroborated.append(rid)
+
+    assert not uncorroborated, (
+        "docs/ATO_EVIDENCE_PACKET.md §5.2 names the following reports but "
+        f"never describes their evidence nearby: {uncorroborated} -- no "
+        "'evals/recordings/' path appears within "
+        f"{_REPORT_TO_RECORDING_WINDOW} characters of the report ID"
     )
 
 
