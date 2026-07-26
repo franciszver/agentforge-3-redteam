@@ -121,9 +121,13 @@ Six components, split across two trust zones, per `docs/ARCHITECTURE.md`:
   target response against a case's success criteria; the trust boundary
   above is its defining property. The shipped Judge makes **no model
   call** on its default path: `JudgeAgent(scorer=None)` — the path every
-  scoring test exercises; one drift test injects a deterministic scorer
-  (`tests/redteam/test_judge_agent.py:236`, `corrupting_scorer`, to prove
-  drift detection fires) — passes through the attack case's own rule-based
+  scoring test exercises; two drift tests inject a deterministic scorer
+  (`tests/redteam/test_judge_agent.py:236`, `corrupting_scorer`; and
+  `tests/redteam/test_campaign.py:519`, `_flipping_scorer`, inside
+  `test_judge_drift_suspected_is_surfaced_and_loop_continues`, which runs
+  the full campaign loop so `judge.score` is really called with a
+  non-`None` scorer) to prove drift detection fires — passes through the
+  attack case's own rule-based
   `detect()` predicate unchanged (`redteam/agents/judge.py:44-53`). Of the
   four agents, only the Red Team is model-backed today; the Orchestrator
   and Documentation Agents are rule-based as well.
