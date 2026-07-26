@@ -37,9 +37,25 @@ def test_release_notes_file_exists():
     assert RELEASE_NOTES.exists()
 
 
+def _is_not_actually_a_repo_path(ref: str) -> bool:
+    """Filters two shapes this repo's own docs use routinely in backtick
+    spans that are NOT filesystem paths, so this check doesn't flag
+    established prose conventions as broken links: an HTTP endpoint like
+    ``/chat`` (single leading-slash segment, no repo directory in it), and
+    brace-glob shorthand like ``VULN-000{1,2,3,4}.json`` (used verbatim in
+    docs/ATO_EVIDENCE_PACKET.md and docs/TRIAGE_LAB.md for the same four
+    files this doc also cites individually via VULN-000N.json elsewhere)."""
+    if "{" in ref or "}" in ref:
+        return True
+    if ref.startswith("/") and ref.count("/") == 1:
+        return True
+    return False
+
+
 def test_release_notes_repo_relative_references_resolve():
     text = _text()
     refs = _extract_repo_relative_refs(text)
+    refs = {ref for ref in refs if not _is_not_actually_a_repo_path(ref)}
     assert refs, "expected at least one repo-relative reference to check"
     missing = sorted(ref for ref in refs if not (REPO_ROOT / ref).exists())
     assert not missing, (
