@@ -1,4 +1,6 @@
 """P3.18 (issue #37): owner approval applied to the 3 critical vuln reports.
+Extended by P3.33 (issue #66) to also cover VULN-0004 (Medium,
+denial_of_service), approved 2026-07-25.
 
 Asserts the committed ``docs/vuln_reports/`` artifacts reflect the owner's
 approval at the Documentation Agent's human-approval gate (see
@@ -32,12 +34,12 @@ _SCHEMA_PATH = _REPO_ROOT / "contracts" / "v1" / "vuln_report.schema.json"
 # human-approval trust boundary. Extend this set only when a new finding's
 # own write-up documents why it is still open (never to silence a
 # regression).
-_KNOWN_OPEN_PENDING = {
-    # issue #54: unbounded ConversationStore growth (Medium,
-    # denial_of_service) -- see docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md and
-    # docs/TRIAGE_LAB.md TRI-014.
-    "VULN-0004",
-}
+#
+# VULN-0004 (issue #54, Medium, denial_of_service) was here pending owner
+# review; the owner approved it on 2026-07-25 (P3.33, issue #66) via
+# DocumentationAgent.approve() -- see tools/approve_vuln_0004.py and
+# test_vuln_0004_is_approved_and_filed below -- so it is no longer listed.
+_KNOWN_OPEN_PENDING: set[str] = set()
 
 
 def _schema() -> dict:
@@ -71,6 +73,38 @@ def test_known_open_pending_reports_are_contract_valid_and_not_approved():
         assert report["requires_human_gate"] is True
         assert "approved_at" not in report, f"{path} has approved_at -- not actually pending"
         assert "approved_by" not in report, f"{path} has approved_by -- not actually pending"
+
+
+def test_vuln_0004_is_approved_and_filed():
+    """P3.33 (issue #66): owner approved VULN-0004 (Medium, denial_of_service)
+    on 2026-07-25 after cold review confirmed the finding.
+
+    Asserts the approved END-STATE: the filed report is schema-valid,
+    carries the approved_at/approved_by stamps, and the stale
+    ``.pending-human-approval`` artifact is gone. This test only inspects
+    the artifact on disk -- it cannot and does not assert HOW it got there
+    (a hand edit producing byte-identical output would pass every
+    assertion here too). Provenance -- that the approval was a real,
+    code-mediated ``DocumentationAgent.approve()`` transition, not a hand
+    edit -- is attested by ``tools/approve_vuln_0004.py`` (which re-derives
+    and field-for-field compares the pre-approval report before approving)
+    and by the PR record, not by this test.
+    """
+    path = _REPORTS_DIR / "VULN-0004.json"
+    assert path.exists(), f"expected approved+filed report missing: {path}"
+    report = json.loads(path.read_text(encoding="utf-8"))
+
+    validator = Draft202012Validator(_schema())
+    errors = list(validator.iter_errors(report))
+    assert errors == [], f"{path} failed schema validation: {errors}"
+
+    assert report["severity"] == "medium"
+    assert report["requires_human_gate"] is True
+    assert "approved_at" in report, f"{path} missing approved_at stamp"
+    assert report["approved_by"] == "owner", f"{path} missing/incorrect approved_by stamp"
+
+    stale_pending = _REPORTS_DIR / "VULN-0004.pending-human-approval.json"
+    assert not stale_pending.exists(), f"stale pending artifact still present: {stale_pending}"
 
 
 def test_three_critical_reports_are_filed_and_contract_valid():

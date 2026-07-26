@@ -2,10 +2,18 @@
 
 - **Status:** Resolved — **confirmed-finding**, narrowly scoped to the
   **conversation store's unbounded resource growth**. Filed as
-  `docs/vuln_reports/VULN-0004.pending-human-approval.json`
-  (`EXP-0004`), held `pending_human_approval` — **not self-approved**, per
-  `redteam/agents/documentation.py`'s human-approval trust boundary and
-  issue #55's `denial_of_service` force-gate (`FORCE_HUMAN_GATE_CATEGORIES`).
+  `docs/vuln_reports/VULN-0004.json` (`EXP-0004`). Held `pending_human_approval`
+  until cold review confirmed the verdict; the owner approved it on
+  2026-07-25 (P3.33, issue #66) via `DocumentationAgent.approve()` — **not
+  self-approved**, per `redteam/agents/documentation.py`'s human-approval
+  trust boundary and issue #55's `denial_of_service` force-gate
+  (`FORCE_HUMAN_GATE_CATEGORIES`), which is what routed it through the gate
+  in the first place.
+- **Upstream disclosure:** reported to the target repo as
+  [agentforge-2-evidence-agent issue #167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167)
+  — documentation only, no fix proposed, no Phase 2 code modified (this
+  repo's rules of engagement forbid production code changes from Phase 3
+  itself).
 - **Source issue:** #54, "FINDING (candidate, untraced): `/chat` message is
   unbounded on the LLM-prompt and conversation-store paths."
 - **Prior work:** issue #25 / `docs/ISSUE_25_DOS_CANDIDATE_RESOLUTION.md`
@@ -247,14 +255,15 @@ verdict:**
 **Severity, per this project's `SEVERITY_BY_CATEGORY` table
 (`redteam/agents/documentation.py`): `denial_of_service` →
 `medium`.** Filed as `EXP-0004`/`VULN-0004`
-(`docs/vuln_reports/VULN-0004.pending-human-approval.json`),
+(`docs/vuln_reports/VULN-0004.json`),
 `requires_human_gate: true` — not because of severity (medium is not
 auto-gated on its own) but because `denial_of_service` is unconditionally
 in `FORCE_HUMAN_GATE_CATEGORIES` (issue #55): this category's `detect()`
 predicates are not reliably machine-decidable end-to-end, so every
-confirmed `denial_of_service` finding is routed through human approval
-regardless of severity. **This report is left `pending_human_approval` —
-it was NOT self-approved.**
+confirmed `denial_of_service` finding was routed through human approval
+regardless of severity. **This report was held `pending_human_approval`
+until the owner approved it on 2026-07-25 (P3.33, issue #66, via
+`DocumentationAgent.approve()`) — it was NOT self-approved.**
 
 **Why `medium`, stated honestly in both directions (reachability):** the
 `agent` container's port 8000 is **not published** to the host in the
@@ -289,11 +298,14 @@ are stated so the rating is legible against the facts, not merely asserted.
   `evals/cases/dos_unbounded_chat_message.py` (`AttackCase`, 1 draw).
 - Recorded draw:
   `evals/recordings/dos-unbounded-chat-message-length/20260725T231338Z-draw1.json`.
-- Vuln report (pending human approval, not self-approved):
-  `docs/vuln_reports/VULN-0004.pending-human-approval.json`, built by
+- Vuln report (owner-approved 2026-07-25, not self-approved):
+  `docs/vuln_reports/VULN-0004.json`, originally filed pending by
   `tools/build_vuln_report_p3_54.py` (idempotent, refuses to overwrite an
-  existing `VULN-0004*.json`).
+  existing `VULN-0004*.json`), approved via `tools/approve_vuln_0004.py`
+  (P3.33, issue #66), which drives `DocumentationAgent.approve()`.
 - Triage-lab entry: `docs/TRIAGE_LAB.md` TRI-014.
+- Upstream disclosure: [agentforge-2-evidence-agent issue #167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167)
+  (documentation only, no fix proposed, no Phase 2 code modified).
 
 ## What this document found wrong or uncertain in its own brief
 

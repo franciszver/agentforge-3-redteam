@@ -170,7 +170,7 @@ eviction, cap, or TTL of any kind — a distinct, confirmed-finding surface
 from the three guards above, narrowly scoped to that unbounded resource
 growth. See `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md` for the full white-box
 trace and `docs/TRIAGE_LAB.md` TRI-014 for the triage disposition (Medium,
-`pending_human_approval`, filed `EXP-0004`/`VULN-0004`).
+owner-approved 2026-07-25, filed `EXP-0004`/`VULN-0004`).
 
 ### 2.6 Identity / authorization exploitation
 

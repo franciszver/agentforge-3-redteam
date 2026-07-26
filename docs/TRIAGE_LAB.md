@@ -19,9 +19,11 @@
   to completion separately at issue #54 — resolved: confirmed-finding, see
   TRI-014 below and `docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`).
 - **Honesty rule applied throughout:** severity/disposition confidence is
-  stated per finding. Only the 3 criticals are owner-approved confirmed
-  exploits (`detect()` returned `vulnerable=True` against the real target).
-  Everything else is labeled by its actual evidence strength — a documented
+  stated per finding. 4 findings are owner-approved confirmed exploits
+  (`detect()` returned `vulnerable=True` against the real target) — the 3
+  criticals (TRI-001–003) plus the Medium TRI-014 (issue #54), approved
+  2026-07-25. Only the 3 are critical severity. Everything else is labeled
+  by its actual evidence strength — a documented
   architectural decision, a single live draw, a measured population, or a
   scanner claim that doesn't survive a look at the code. No finding below is
   inflated past what its evidence supports, and no false positive is
@@ -44,7 +46,7 @@
 | TRI-011 | False Positive | "Weak citation grounding enables spoofed evidence" (pixel-bbox) | FALSE POSITIVE — documented UX limitation, not an injection/verification vuln |
 | TRI-012 | False Positive | "Hardcoded localhost URL in dev config" | FALSE POSITIVE — local-appliance-only by design, not internet-reachable |
 | TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths this resolution left untraced were traced to completion at #54 — see TRI-014 |
-| TRI-014 | Medium | Unbounded `ConversationStore` growth (issue #54) | confirmed-real (structural, code-verified) / fix-recommended — no length bound on `ChatRequest.message` anywhere in the stack, and `ConversationStore` never evicts; filed `EXP-0004`/`VULN-0004`, `pending_human_approval` |
+| TRI-014 | Medium | Unbounded `ConversationStore` growth (issue #54) | confirmed-real (structural, code-verified) / fix-recommended — no length bound on `ChatRequest.message` anywhere in the stack, and `ConversationStore` never evicts; filed `EXP-0004`/`VULN-0004`, owner-approved 2026-07-25 |
 
 ---
 
@@ -537,11 +539,14 @@
   already dispositive, and probing the exact overflow point would not
   change the verdict). The regex-scan path is explicitly **not** claimed
   as independently exploitable. Filed as `EXP-0004`/`VULN-0004`
-  (`docs/vuln_reports/VULN-0004.pending-human-approval.json`, category
+  (`docs/vuln_reports/VULN-0004.json`, category
   `denial_of_service` → Medium per `SEVERITY_BY_CATEGORY`,
   `requires_human_gate: true` per issue #55's unconditional
-  `FORCE_HUMAN_GATE_CATEGORIES` for this category) — **left
-  `pending_human_approval`, not self-approved.** Machine-checked (11 new
+  `FORCE_HUMAN_GATE_CATEGORIES` for this category) — held
+  `pending_human_approval` until the owner approved it 2026-07-25 (P3.33,
+  issue #66), not self-approved. Reported upstream as
+  [agentforge-2-evidence-agent issue #167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167)
+  (documentation only). Machine-checked (11 new
   citations for this issue, 40 total in `TRACE_CITATIONS` after a
   cold-review pass added 6 more) via
   `evals/analysis/dos_input_bound_resolution.py::resolve_issue_54` and its
@@ -577,7 +582,8 @@
   are now resolved separately at TRI-014 (issue #54), not folded into
   TRI-013's own disposition. TRI-014 itself is kept at Medium (matching
   `denial_of_service`'s severity table entry, not inflated to Critical/High
-  on the strength of "unbounded" alone) and its own vuln report is left
-  `pending_human_approval`, not self-approved. Updated here rather than
+  on the strength of "unbounded" alone) and its own vuln report was held
+  `pending_human_approval` (not self-approved) until the owner approved it
+  2026-07-25 (P3.33, issue #66). Updated here rather than
   left stale, since this triage lab is meant to reflect current disposition
   confidence, not a frozen snapshot.
