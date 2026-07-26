@@ -76,13 +76,29 @@ live target or a live model call.
 ## The findings
 
 Four owner-approved findings against the Phase 2 clinical co-pilot, pinned
-at `v2.0.0` (`docs/vuln_reports/VULN-0001.json` through `VULN-0004.json`):
+at `v2.0.0` (`docs/vuln_reports/VULN-0001.json` through `VULN-0004.json`).
+Per this project's rules of engagement (single-draw honesty — state sample
+size), each finding's draw count is: VULN-0001, VULN-0002, and VULN-0003
+each reproduced **3/3** on independent recorded draws
+(`evals/recordings/identity-authz-garbage-bearer-token/`,
+`evals/recordings/data-exfil-discontinued-med-marked-verified/`,
+`evals/recordings/data-exfil-sourceref-topical-irrelevance/`); VULN-0004 is
+a **single recorded draw**
+(`evals/recordings/dos-unbounded-chat-message-length/20260725T231338Z-draw1.json`).
+As upstream issue #167 states it: *"Demonstrated: one live draw … Single
+draw; recorded. Not demonstrated: an actual memory-exhaustion event … The
+unbounded-growth conclusion is deductive."* That caveat carries over here
+unchanged — VULN-0004's acceptance of an unbounded message and the
+`ConversationStore`'s lack of any eviction/TTL/cap are directly observed on
+that one draw; the downstream resource-exhaustion consequence is a
+deductive conclusion from the code path, not something separately
+measured.
 
 | ID | Severity | What it is |
 |---|---|---|
 | **VULN-0001** | Critical | Auth bypass — the default bearer-token validator (`copilot_per_user_token_enabled=False`) accepts any non-empty token, no signature or identity check. |
 | **VULN-0002** | Critical | A discontinued medication is reported as currently-taking and marked `verified` — citation checking confirms provenance (the value appears in a tool result) but never checks the record's own `status` field. |
-| **VULN-0003** | Critical | A topically irrelevant `SourceRef` verifies an unrelated claim (an appointment record's `status` field cited to back a blood-pressure claim) — same root cause as VULN-0002, separately reproduced and separately approved. **This finding reproduces on the shipped planner's own behavior** (`docs/THREAT_MODEL.md` §2.4 "tool misuse": the planner substitutes an unexpected tool call — here `get_appointments` in place of a vitals lookup — and the resulting coincidental-match citation still passes verification), not a hand-crafted or hypothetical citation. |
+| **VULN-0003** | Critical | A topically irrelevant `SourceRef` verifies an unrelated claim (an appointment record's `status` field cited to back a blood-pressure claim) — same root cause as VULN-0002, separately reproduced and separately filed. **This finding reproduces on the shipped planner's own behavior** (`docs/THREAT_MODEL.md` §2.4 "tool misuse": the planner substitutes an unexpected tool call — here `get_appointments` in place of a vitals lookup — and the resulting coincidental-match citation still passes verification), not a hand-crafted or hypothetical citation. |
 | **VULN-0004** | Medium | `/chat`'s `message` field carries no length bound anywhere in the stack, and `ConversationStore` (`chat.py:570-594`) never evicts, TTLs, or caps retained conversations — accepted-and-unbounded, not rejected-and-cheap. |
 
 Full detail, clinical-impact framing, and remediation guidance for each is
@@ -125,11 +141,17 @@ review (issue #153) found its heuristic "NOT fit to enable as shipped"
 (negation-blind, short claims bypass the ratio, wrong numeric values pass
 outright), and `tool_call_scoping.py` was shipped as a "coarser,
 owner-approved alternative" after that review. Both ship default-off, with
-the in-code comment *"Default OFF: byte-identical to today."* The findings were reported upstream as
-[agentforge-2-evidence-agent#167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167)
-— documentation only, no fix proposed or implied, consistent with this
+the in-code comment *"Default OFF: byte-identical to today."*
+
+**What was, and was not, filed upstream.** Only VULN-0004 (the unbounded
+`/chat` message length and unbounded `ConversationStore`) was filed as an
+upstream issue:
+[agentforge-2-evidence-agent#167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167),
+documentation only, no fix proposed or implied, consistent with this
 project's rules of engagement (no production code changes from Phase 3
-itself).
+itself). **No upstream issue was filed for VULN-0001, VULN-0002, or
+VULN-0003** — this document, `docs/UPSTREAM_STATUS.md`, and the
+`docs/TRIAGE_LAB.md` entries are their only disclosure record to date.
 
 ## Honest limitations
 
@@ -198,8 +220,11 @@ project. It does not claim the autonomous loop discovered these findings
 (see above). It does not claim upstream `v2.1.0` closes any of them, in
 either configuration. It does not claim the evidence trail is fully durable
 end-to-end (#63, #68 above). It claims exactly what is verified: four
-reproduced, owner-approved findings against a pinned target, a documented
-and re-checked upstream status as of `v2.1.0`, a working six-component
-platform with an enforced trust boundary between attacker and grader, and
-an honest account of where the platform's own evidence trail is currently
-weak.
+owner-approved findings against a pinned target — three reproduced 3/3 on
+independent draws, one (VULN-0004) a single recorded draw with its
+resource-exhaustion consequence deductive, not separately measured, per
+upstream #167's own framing — a documented and re-checked upstream status
+as of `v2.1.0`, a working six-component platform with an architecturally
+independent Judge at the module/data level (OS-process isolation is a
+tracked design goal, #73), and an honest account of where the platform's
+own evidence trail is currently weak.
