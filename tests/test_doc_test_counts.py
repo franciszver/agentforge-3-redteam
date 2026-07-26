@@ -42,6 +42,7 @@ import sys
 from pathlib import Path
 
 from evals.analysis.dos_input_bound_resolution import TRACE_CITATIONS
+from evals.analysis.v210_upstream_status import TRACE_CITATIONS_V210
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
@@ -64,6 +65,10 @@ def _live_counts() -> tuple[int, int, int]:
     ``ci_passed``/``ci_skipped`` subtract off exactly the citation-count
     tests that skip when the sibling is absent -- CI never checks out the
     sibling (`.github/workflows/ci.yml` runs plain `pytest tests/ -q`).
+    Two citation sets now skip that way:
+    `TestTraceCitationsAgainstPinnedTarget` (`TRACE_CITATIONS`, issue
+    #25/#54) and `TestCitationsAgainstPinnedTargets` (`TRACE_CITATIONS_V210`,
+    issue #58) -- both parametrized 1:1 over their respective tuple.
     """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "--collect-only", "-q"],
@@ -76,7 +81,7 @@ def _live_counts() -> tuple[int, int, int]:
     assert match, f"could not parse collected-test count from:\n{result.stdout[-500:]}"
     total = int(match.group(1))
 
-    citation_count = len(TRACE_CITATIONS)
+    citation_count = len(TRACE_CITATIONS) + len(TRACE_CITATIONS_V210)
     return total, total - citation_count, citation_count
 
 
