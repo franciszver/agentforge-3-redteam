@@ -189,14 +189,26 @@ def test_release_notes_does_not_overclaim_judge_enforcement():
     assert "redteam.observability" in text
 
 
-def test_release_notes_scopes_upstream_167_to_vuln_0004_only():
-    """Overclaim-review FIX 3: upstream #167 is exclusively VULN-0004; no
-    upstream issue exists for VULN-0001/0002/0003. The notes must say so
-    explicitly, not imply all four were reported as #167."""
+def test_release_notes_maps_each_vuln_to_its_own_upstream_issue():
+    """Overclaim-review FIX 3, updated post-#63/#68 closure: each of the
+    four findings now has its own upstream issue (#167 VULN-0004, #168
+    VULN-0001, #169 VULN-0002, #170 VULN-0003) -- the notes must map each
+    finding to its own issue number, not lump them under one, and not
+    claim (the now-stale fact) that only VULN-0004 was ever filed."""
     text = _text()
     normalized = " ".join(text.split())
-    assert "No upstream issue was filed for VULN-0001" in normalized
-    assert "VULN-0003" in normalized.split("No upstream issue was filed for VULN-0001", 1)[1][:60]
+    mapping = {
+        "#167": "VULN-0004",
+        "#168": "VULN-0001",
+        "#169": "VULN-0002",
+        "#170": "VULN-0003",
+    }
+    for issue, vuln in mapping.items():
+        positions = [i for i in range(len(normalized)) if normalized.startswith(issue, i)]
+        assert positions, f"{issue} not found"
+        assert any(
+            vuln in normalized[max(0, p - 100) : p + 200] for p in positions
+        ), f"{issue} never appears near {vuln}"
 
 
 def test_release_notes_states_draw_counts_and_vuln_0004_single_draw():
@@ -224,3 +236,108 @@ def test_release_notes_does_not_carry_status_draft_header():
     no internal 'Status: DRAFT' banner."""
     text = _text()
     assert "Status: DRAFT" not in text
+
+
+def test_release_notes_does_not_claim_63_or_68_are_open():
+    """#63 and #68 are CLOSED (P3.31, P3.34) -- the notes must not carry
+    the stale '(issue #63, open)' / '(issue #68, open)' framing, and must
+    not use a bare 'open' issue-status word next to either number."""
+    text = _text()
+    normalized = " ".join(text.lower().split())
+    for forbidden in ("issue #63, open", "#63, open", "issue #68, open", "#68, open"):
+        assert forbidden not in normalized, f"stale open-issue framing survived: {forbidden!r}"
+
+
+def test_release_notes_describes_63_and_68_as_closed_gaps():
+    """The limitations section must now read as 'we found these gaps in our
+    own evidence trail and closed them': #63 and #68 named, in a closed
+    frame, plus the concrete shipped mechanisms (post-loop export,
+    --list-pending, --approve/--approved-by, and the ATO packet's now-
+    complete §5.2 index)."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "#63" in normalized and "#68" in normalized
+    assert "closed" in normalized.lower()
+    assert "--list-pending" in normalized
+    assert "--approve" in normalized
+    assert "--approved-by" in normalized
+    assert "try/finally" in normalized or "try / finally" in normalized.lower()
+
+
+def test_release_notes_does_not_claim_run_campaign_has_no_approve_subcommand():
+    text = _text()
+    normalized = " ".join(text.lower().split())
+    assert "no approve subcommand" not in normalized
+    assert "no `approve` subcommand" not in normalized
+
+
+def test_release_notes_does_not_claim_ato_index_has_gaps():
+    """The ATO evidence index gap (VULN-0004 missing from §5.2, exploit_id
+    not resolving) is closed for the index; only the exploit_id
+    in-process-only property should remain, stated as a property, not a
+    gap."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "does not mention VULN-0004" not in normalized
+    assert "known gaps (issue #68" not in normalized
+
+
+def test_release_notes_names_all_four_upstream_issues():
+    """All four findings are now filed upstream: #167 (VULN-0004), #168
+    (VULN-0001), #169 (VULN-0002, refs upstream #130), #170 (VULN-0003,
+    refs upstream #130, #121). The stale 'no upstream issue was filed for
+    VULN-0001, VULN-0002, or VULN-0003' paragraph must be gone."""
+    text = _text()
+    normalized = " ".join(text.split())
+    for issue in ("#167", "#168", "#169", "#170"):
+        assert issue in normalized, f"upstream issue {issue} not named"
+    assert "No upstream issue was filed for VULN-0001" not in normalized
+
+
+def test_release_notes_notes_upstream_130_evidence_without_demanding_reopen():
+    """#169/#170 record evidence contradicting the premise upstream #130
+    was closed on ('design question, not currently triggering') -- the
+    notes must state that as evidence on the record, not demand a reopen."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "#130" in normalized
+    lowered = normalized.lower()
+    for demand in ("should reopen", "must reopen", "reopen #130", "demand", "request that upstream reopen"):
+        assert demand not in lowered, f"notes must not demand upstream action: {demand!r}"
+
+
+def test_release_notes_owns_the_kickoff_process_isolation_gap():
+    """planning/KICKOFF_PROMPT.md's HARD CONSTRAINT says '(separate
+    process/context) independence'; docs/ARCHITECTURE.md now correctly
+    states OS-process isolation is a design goal, not implemented. The
+    release notes must own that gap explicitly: intent met (Judge shares no
+    context, receives only (case, response, attempt_id), AST-scanned both
+    directions), mechanism (separate processes) not implemented."""
+    text = _text()
+    assert "KICKOFF_PROMPT.md" in text
+    normalized = " ".join(text.split())
+    assert "case, response, attempt_id" in normalized
+    assert "test_independence_module_imports_no_judge_internals" in normalized or (
+        "both directions" in normalized.lower()
+    )
+
+
+def test_release_notes_discloses_p3_31_limitations():
+    """New limitations from #76 (P3.31) must be disclosed: (1)
+    pending_human_triage_count in the observability snapshot is per-call,
+    not a directory scan; (2) --approve without --db-path needs the
+    explicit unverified opt-out flag; (3) --reports-dir without --db-path
+    refuses to start."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "pending_human_triage_count" in normalized
+    assert "--unverified-i-vouch-without-db-check" in normalized
+    assert "--reports-dir" in normalized and "--db-path" in normalized
+
+
+def test_release_notes_test_counts_are_not_stale_p3_29_numbers():
+    """The notes must not carry forward the pre-rebase 360/254 counts --
+    tests/test_doc_test_counts.py is the arbiter of the live numbers."""
+    text = _text()
+    assert "360 passed" not in text
+    assert "254 passed" not in text

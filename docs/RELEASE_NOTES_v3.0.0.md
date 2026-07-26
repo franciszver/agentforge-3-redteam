@@ -4,31 +4,56 @@
 
 The Red Team Agent (which attacks) and the Judge Agent (which grades) are
 **architecturally independent at the module and data level**: `judge.py`
-imports nothing under `redteam.agents` or `redteam.harness`, holds no Red
-Team state, and scores only from a `(case, response, attempt_id)` triple
-(`redteam/agents/judge.py:96-100,343`) — never the Red Team's reasoning,
-prompt history, or internal module state. `docs/ARCHITECTURE.md` sets a
-further goal, per-role OS-process isolation, as the design target; as
-shipped, `redteam/campaign.py::run_campaign` wires all six components
-(Orchestrator, Red Team, target client, Judge, store, Documentation) into
-one Python process, calling each in turn inside a single loop
-(`redteam/campaign.py:254,295,353,436`) — so today the boundary is enforced
-at the module/data level, not the OS-process level described as a goal in
-`docs/ARCHITECTURE.md`. Closing that gap is tracked separately (issue
-#73). What ships today is checked mechanically by
-`tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals`,
-an AST import scan over `redteam/agents/judge.py` that fails the moment the
-Judge module imports anything whose dotted path starts with
-`redteam.agents` or `redteam.harness`. That scan is narrower than "no code
-path can leak Red Team internals to the Judge": it does not catch
-`import redteam` followed by attribute access, `from redteam import
-agents`, a dynamic `importlib.import_module(...)` call, or — most
-plausibly, since it would look like ordinary observability code — `from
-redteam.observability.action_log import ActionLog`, which is not in the
-forbidden-prefix set and whose log entries carry full attempt payloads
-(`redteam/campaign.py:311-317`). The test enforces the module-boundary
-convention against accidental drift; it does not prove no code path could
-route Red Team internals into the Judge.
+imports nothing under `redteam.agents`, `redteam.harness`, or
+`redteam.observability`, holds no Red Team state, and scores only from a
+`(case, response, attempt_id)` triple (`redteam/agents/judge.py:96-100,343`)
+— never the Red Team's reasoning, prompt history, or internal module state.
+`docs/ARCHITECTURE.md` sets a further goal, per-role OS-process isolation,
+as the design target; as shipped, `redteam/campaign.py::run_campaign` wires
+all six components (Orchestrator, Red Team, target client, Judge, store,
+Documentation) into one Python process, calling each in turn inside a
+single loop (`redteam/campaign.py:254,295,353,436`) — so today the boundary
+is enforced at the module/data level, not the OS-process level described
+as a goal in `docs/ARCHITECTURE.md`. Closing that gap is tracked separately
+(issue #73). What ships today is checked mechanically, **in both
+directions**: `tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals`
+is an AST import scan over `redteam/agents/judge.py` that fails the moment
+the Judge module imports anything whose dotted path starts with
+`redteam.agents`, `redteam.harness`, or `redteam.observability`; the
+symmetric
+`tests/redteam/test_red_team_agent.py::test_independence_module_imports_no_judge_internals`
+scans `redteam/agents/red_team.py` the same way for any import of
+`redteam.agents.judge`. Each scan is narrower than "no code path can leak
+one agent's internals to the other": it does not catch `import redteam`
+followed by attribute access, `from redteam import agents`, a dynamic
+`importlib.import_module(...)` call, or a forbidden import built as a
+runtime string. Each scan also only covers the one module file it targets
+— a forbidden import added to a module that file itself imports from would
+not be caught. The tests enforce the module-boundary convention against
+accidental drift; they do not prove no code path could ever route one
+agent's internals into the other.
+
+**Reconciling this against the kickoff brief's own wording.**
+`planning/KICKOFF_PROMPT.md`'s HARD CONSTRAINT reads (quoted verbatim, a
+requirement written before any code existed, not a claim about shipped
+behavior — the parenthesised mechanism below remains a design goal, not
+yet implemented): *"Attack generation and evaluation must NOT share
+context ('conflict of interest by design'). Build four agents with
+architectural (separate process/context) independence."* Read plainly,
+that names two things: an **intent** (no shared context between attack
+generation and evaluation) and a **mechanism** (separate processes at the
+OS level). Comparing this release against both,
+rather than only the intent: the intent is met — the Judge receives only
+`(case, response, attempt_id)`, holds no model context at all on its
+default path, imports nothing from the Red Team, and both directions are
+enforced by the AST scans above. The parenthesised mechanism — separate
+processes — is not implemented; `docs/ARCHITECTURE.md` §1 states this
+directly (all four components run in one Python process, per-role
+OS-process isolation is a stated design goal, not yet shipped) and
+`docs/ATO_EVIDENCE_PACKET.md` §1 does too. Both documents are public and
+committed, so a reader can compare them side by side without this
+document's help; this document says so explicitly rather than leaving it
+to be discovered.
 
 ## What the platform is
 
@@ -154,46 +179,65 @@ outright), and `tool_call_scoping.py` was shipped as a "coarser,
 owner-approved alternative" after that review. Both ship default-off, with
 the in-code comment *"Default OFF: byte-identical to today."*
 
-**What was, and was not, filed upstream.** Only VULN-0004 (the unbounded
-`/chat` message length and unbounded `ConversationStore`) was filed as an
-upstream issue:
-[agentforge-2-evidence-agent#167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167),
-documentation only, no fix proposed or implied, consistent with this
-project's rules of engagement (no production code changes from Phase 3
-itself). **No upstream issue was filed for VULN-0001, VULN-0002, or
-VULN-0003** — this document, `docs/UPSTREAM_STATUS.md`, and the
-`docs/TRIAGE_LAB.md` entries are their only disclosure record to date.
+**What was filed upstream.** All four findings are now filed as upstream
+issues, documentation only, no fix proposed or implied, consistent with
+this project's rules of engagement (no production code changes from Phase
+3 itself):
+[agentforge-2-evidence-agent#167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167)
+(VULN-0004, unbounded `/chat` message length and unbounded
+`ConversationStore`),
+[#168](https://github.com/franciszver/agentforge-2-evidence-agent/issues/168)
+(VULN-0001, auth bypass),
+[#169](https://github.com/franciszver/agentforge-2-evidence-agent/issues/169)
+(VULN-0002, discontinued medication marked verified; references upstream
+#130), and
+[#170](https://github.com/franciszver/agentforge-2-evidence-agent/issues/170)
+(VULN-0003, topically irrelevant `SourceRef` verified; references upstream
+#130 and #121).
+
+**#169 and #170 record evidence against the premise upstream #130 was
+closed on.** Upstream issue #130 ("`check_source_ref`/`check_claim` have no
+content-relevance check on ordinary `SourceRef`s") was closed as "design
+question, not currently triggering" — its own 10-live-draw investigation
+did not reproduce a case where the gap actually fired. VULN-0002 and
+VULN-0003 are exactly that gap firing, reproduced 3/3 on independent
+recorded draws each. #169/#170 put that evidence on the upstream record so
+a maintainer revisiting #130 has it; this is evidence placed on the record,
+not a request or an assertion that upstream should act on it — the
+disposition of #130 remains upstream's own call.
 
 ## Honest limitations
 
 These carry equal prominence to the findings above, not an afterthought.
 
-- **Pending human-triage reports have no durable surface across a process
-  boundary (issue #63, open).** `ActionLog.export_jsonl` runs only at the
-  top of each campaign iteration, so a single-iteration run's own events
-  are never exported. `tools/run_campaign.py` uses in-memory
-  `ExploitDB`/`ActionLog`/`DocumentationAgent` stores and has no `approve`
-  subcommand. Sharpest consequence: a report left pending by a process that
-  has since exited cannot be approved directly — there is no live agent
-  instance still holding it in memory, and no CLI `approve` subcommand to
-  reattach to one. Approving VULN-0004 required first reconstructing that
-  in-memory state (`tools/approve_vuln_0004.py`): it re-derives the exact
-  same `ExploitRecord` from the original builder function, re-drives
-  `file_report(force_human_gate=True)` on a fresh `DocumentationAgent`, and
-  compares the result field-for-field against the already-committed
-  pending artifact, refusing on any drift — only then does it call
-  `DocumentationAgent.approve()`, the platform's one real code path for a
-  pending report becoming filed. Every field in the committed
-  `VULN-0004.json` came from `build_vuln_report()`/`approve()`, not from
-  hand-editing; the gap this issue tracks is that `approve()` needed a
-  bespoke reconstruction step to reach at all, not that it was bypassed.
-- **The ATO evidence packet's evidence index has known gaps (issue #68,
-  open).** `docs/ATO_EVIDENCE_PACKET.md` §5.2 does not mention VULN-0004
-  despite being cross-referenced for it elsewhere in the same document, and
-  `exploit_id` join keys (`EXP-0001`–`EXP-0004`) do not resolve to any
-  committed exploit database — there is no committed `ExploitDB`; the
-  durable evidence is the recordings under `evals/recordings/` and the
-  filed report JSON itself, not a queryable store.
+- **Pending human-triage reports now have a durable surface across a
+  process boundary — the gap issue #63 tracked is closed (P3.31).**
+  `redteam/campaign.py::run_campaign` now exports `ActionLog` in a
+  try/finally block after the loop, not only at the top of each iteration, so
+  a single-iteration (or single-report) run's own events are always
+  exported before the process exits. `tools/run_campaign.py` adds
+  `--reports-dir PATH` to persist vuln reports durably, `--list-pending
+  --reports-dir PATH` to list everything awaiting triage under that
+  directory (directory-wide, independent of any one run), and `--approve
+  EXPLOIT_ID --reports-dir PATH --approved-by NAME` to approve one —
+  reattaching to a report left pending by a process that has since exited,
+  which was exactly the gap #63 named. `--approve` generalizes the
+  verify-then-approve discipline `tools/approve_vuln_0004.py` established:
+  by default it requires `--db-path PATH` and re-derives the report via
+  `build_vuln_report`, refusing (exit 1, nothing approved) on any
+  field-for-field drift against the persisted exploit record before
+  calling `DocumentationAgent.approve()` — the one real code path for a
+  pending report becoming filed. No field comes from hand-editing.
+- **The ATO evidence packet's evidence index is now complete — the gap
+  issue #68 tracked is closed (P3.34).** `docs/ATO_EVIDENCE_PACKET.md` §5.2
+  now covers all five `evals/recordings/` directories, including
+  VULN-0004. One property from that issue remains true and is stated here
+  as a property, not an open gap: `exploit_id` join keys
+  (`EXP-0001`–`EXP-0004`) resolve only within a running process's
+  in-memory `ExploitDB` (or a `--db-path`-persisted one, P3.31) — there is
+  no separate, always-on queryable store outside a campaign run. The
+  durable evidence of record is the recordings under `evals/recordings/`
+  and the filed report JSON itself.
 - **A structural detector blind spot, not a bug.**
   `evals/cases/dos_input_bound.py::detect` is a genuinely black-box
   observer: a `200`-with-answer response is indistinguishable, from
@@ -204,10 +248,37 @@ These carry equal prominence to the findings above, not an afterthought.
   (`DocumentationAgent.file_report(..., force_human_gate=True)`) instead of
   auto-filed; the category is not reliably machine-decidable with a
   black-box probe.
+- **`pending_human_triage_count` in the observability snapshot is
+  per-call, not a directory scan (new in P3.31 — the durable-pending work
+  that closed #63 above created this).**
+  `redteam.observability.emit_snapshot`'s `pending_human_triage_count`
+  counts only the `vuln_reports` sequence the caller passes for that
+  snapshot — in the live campaign loop, everything filed/pending so far in
+  *this run* — not every pending report on disk. It can legitimately
+  differ from `tools/run_campaign.py --list-pending`, which scans an
+  entire `--reports-dir` directory-wide, independent of any one run
+  (reports left pending by an earlier run, for example, are invisible to
+  the snapshot's count but visible to `--list-pending`). Use
+  `--list-pending` for the directory-wide answer; the snapshot field
+  answers a narrower, this-run-only question despite the identical key
+  name.
+- **`--approve` without `--db-path` vouches without verification.** The
+  field-for-field cross-check that makes `--approve` safe requires
+  `--db-path PATH` naming a persisted exploit-DB record for the
+  `exploit_id` being approved. There is an explicit, loudly-warned opt-out,
+  `--unverified-i-vouch-without-db-check`, for approving a report that has
+  no persisted DB record to check against — using it means the approval is
+  taken on trust, not verified against a stored record.
+- **`--reports-dir` without `--db-path` refuses to start, by design.**
+  Exploit IDs restart at `EXP-0001` every run without a persisted
+  `--db-path`, which would collide with an already-persisted report under
+  a durable `--reports-dir` on any second run against it — `run` mode
+  (neither `--list-pending` nor `--approve`) refuses to start in that
+  combination rather than risk the collision.
 - **The test count is environment-dependent — state both, never a bare
   number.** With the Phase 2 sibling checkout present (this development
-  environment), the full suite is `360 passed`. In CI, which never checks
-  out the sibling, the same suite is `254 passed, 106 skipped` — the 106
+  environment), the full suite is `405 passed`. In CI, which never checks
+  out the sibling, the same suite is `299 passed, 106 skipped` — the 106
   skips are exactly the citation-verification tests that require reading
   the pinned target's source (`TestTraceCitationsAgainstPinnedTarget`,
   `TestCitationsAgainstPinnedTargets`, and the CLAUDE.md target-path
@@ -236,13 +307,19 @@ This tag does not claim any Phase 2 code was changed, patched, or fixed —
 Phase 3's rules of engagement forbid production code changes from this
 project. It does not claim the autonomous loop discovered these findings
 (see above). It does not claim upstream `v2.1.0` closes any of them, in
-either configuration. It does not claim the evidence trail is fully durable
-end-to-end (#63, #68 above). It claims exactly what is verified: four
-owner-approved findings against a pinned target — three reproduced 3/3 on
-independent draws, one (VULN-0004) a single recorded draw with its
-resource-exhaustion consequence deductive, not separately measured, per
-upstream #167's own framing — a documented and re-checked upstream status
-as of `v2.1.0`, a working six-component platform with an architecturally
+either configuration. It does not claim the evidence trail's remaining
+edges — `pending_human_triage_count`'s per-run scope and `exploit_id`'s
+in-process-only resolution, both above — are gone; #63 and #68 closed the
+gaps they tracked (durable cross-process approval, a complete §5.2 index),
+not every open edge in the trail. It does not claim the kickoff brief's
+parenthesised separate-process mechanism is implemented — see "The
+differentiator" above for exactly what is and is not. It claims exactly
+what is verified: four owner-approved findings against a pinned target —
+three reproduced 3/3 on independent draws, one (VULN-0004) a single
+recorded draw with its resource-exhaustion consequence deductive, not
+separately measured, per upstream #167's own framing — a documented and
+re-checked upstream status as of `v2.1.0`, all four now also filed as
+upstream issues, a working six-component platform with an architecturally
 independent Judge at the module/data level (OS-process isolation is a
 tracked design goal, #73), and an honest account of where the platform's
 own evidence trail is currently weak.

@@ -326,9 +326,9 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **375 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **405 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **269 passed, 106 skipped** in CI
+present locally (confirmed at PR time); **299 passed, 106 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
 not check it out, so the 100 total sibling-checkout citation cases
 class-skip cleanly there: 40 `TestTraceCitationsAgainstPinnedTarget` cases
@@ -373,7 +373,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **375 passing tests (269 passed, 106 skipped in CI), no live/network/GPU
+- **405 passing tests (299 passed, 106 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -395,18 +395,18 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 375
-  with the sibling checkout present, or 269 passed / 106 skipped without
+  changes plus its expanded citation-verification test set move it to 405
+  with the sibling checkout present, or 299 passed / 106 skipped without
   it, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 375-test suite (269 in CI)
+### 5.1 The 405-test suite (299 in CI)
 
-`pytest tests/ -q` → **375 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **269 passed, 106 skipped**
+`pytest tests/ -q` → **405 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **299 passed, 106 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -518,8 +518,8 @@ to approve and nothing already filed.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 375 total with the sibling checkout present,
-  or 269 passed / 106 skipped without it, §5.1).
+  the repo has since grown to 405 total with the sibling checkout present,
+  or 299 passed / 106 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -639,8 +639,8 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (375 tests with the sibling checkout
-  present / 269 passed, 106 skipped in CI, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (405 tests with the sibling checkout
+  present / 299 passed, 106 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
