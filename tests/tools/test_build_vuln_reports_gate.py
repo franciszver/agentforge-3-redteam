@@ -31,9 +31,9 @@ def _dos_exploit_record() -> dict[str, Any]:
     return {
         "schema_version": "1.0.0",
         "exploit_id": "EXP-9001",
-        "case_id": "dos_input_bound",
-        "attempt_id": "att-dos_input_bound-1",
-        "verdict_id": "vd-dos_input_bound-1",
+        "case_id": "dos-input-bound",
+        "attempt_id": "att-dos-input-bound-1",
+        "verdict_id": "vd-dos-input-bound-1",
         "category": "denial_of_service",
         "source": "judge",
         "confirmed_at": "2026-07-25T00:00:00Z",
@@ -42,7 +42,7 @@ def _dos_exploit_record() -> dict[str, Any]:
             "expected": "detect() returns vulnerable=False (guard holds)",
             "observed": "detect() returned vulnerable=True",
         },
-        "recording_ref": "evals/recordings/dos_input_bound/synthetic-draw1.json",
+        "recording_ref": "evals/recordings/dos-input-bound/synthetic-draw1.json",
     }
 
 
