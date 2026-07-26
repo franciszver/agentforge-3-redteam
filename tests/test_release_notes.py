@@ -163,3 +163,64 @@ def test_release_notes_describes_detector_blind_spot():
     text = _text()
     assert "dos_input_bound" in text
     assert "denial_of_service" in text or "human triage" in text.lower()
+
+
+def test_release_notes_does_not_claim_separate_os_processes():
+    """Overclaim-review FIX 1 (P3.29 fix pass): run_campaign wires all six
+    components into one Python process in a single loop -- the notes must
+    not claim the Red Team and Judge run as separate OS processes with
+    separate contexts. Independence is module/data-level; OS-process
+    isolation is ARCHITECTURE.md's design goal, tracked by issue #73."""
+    text = _text()
+    normalized = " ".join(text.lower().split())
+    assert "separate os processes" not in normalized
+    assert "run_campaign" in text
+    assert "#73" in text
+
+
+def test_release_notes_does_not_overclaim_judge_enforcement():
+    """Overclaim-review FIX 2: the AST import scan only forbids
+    redteam.agents/redteam.harness prefixes -- it does not prove no code
+    path can leak Red Team internals to the Judge (e.g. via
+    redteam.observability.action_log, which is not in the forbidden set)."""
+    text = _text()
+    normalized = " ".join(text.lower().split())
+    assert "no code path by which the judge can see" not in normalized
+    assert "redteam.observability" in text
+
+
+def test_release_notes_scopes_upstream_167_to_vuln_0004_only():
+    """Overclaim-review FIX 3: upstream #167 is exclusively VULN-0004; no
+    upstream issue exists for VULN-0001/0002/0003. The notes must say so
+    explicitly, not imply all four were reported as #167."""
+    text = _text()
+    assert "No upstream issue was filed for VULN-0001, VULN-0002, or\nVULN-0003" in text or (
+        "No upstream issue was filed for VULN-0001" in text and "VULN-0003" in text
+    )
+
+
+def test_release_notes_states_draw_counts_and_vuln_0004_single_draw():
+    """Overclaim-review FIX 4: single-draw honesty. VULN-0001/0002/0003 are
+    3/3 independent draws; VULN-0004 is one recorded draw with its
+    resource-exhaustion consequence flagged as deductive, not measured."""
+    text = _text()
+    assert "3/3" in text
+    assert "single recorded draw" in text.lower() or "single draw" in text.lower()
+    assert "deductive" in text.lower()
+
+
+def test_release_notes_does_not_imply_approve_was_bypassed():
+    """Overclaim-review FIX 5: approve() was the real transition for
+    VULN-0004 (tools/approve_vuln_0004.py re-derives, re-drives
+    file_report, compares field-for-field, then calls approve()). The
+    notes must not imply the artifact was hand-made or approval skipped."""
+    text = _text()
+    assert "DocumentationAgent.approve()" in text
+    assert "not from\n  hand-editing" in text or "not from hand-editing" in text or "hand-editing" in text
+
+
+def test_release_notes_does_not_carry_status_draft_header():
+    """The notes must be pasteable directly as the GitHub Release body --
+    no internal 'Status: DRAFT' banner."""
+    text = _text()
+    assert "Status: DRAFT" not in text

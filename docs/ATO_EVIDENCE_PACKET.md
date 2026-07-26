@@ -272,7 +272,8 @@ level. The other three roles are deterministic and call no model at all
 | Role | Runtime | Model | Verified where |
 |---|---|---|---|
 | Red Team Agent generator | ollama, `http://localhost:11434`, **CPU-only** (`num_gpu: 0`, hardcoded default) | `huihui_ai/qwen2.5-abliterate:7b` | `redteam/agents/red_team.py` `DEFAULT_MODEL` constant + module docstring: validated to comply with offensive-security generation, ~7s/call, CPU-only |
-| Judge / Orchestrator / Documentation Agents | none -- deterministic Python, no model instance, no model call, in the same process as every other role | N/A in the shipped default path; each exposes an optional model-backed seam (`scorer`/`ranker`/`narrator`) that a stock instruct model could later fill (no uncensored requirement -- none of the three is a generation-under-refusal-pressure task) | `docs/ARCHITECTURE.md` §4 || Target's answer model | GPU-resident, target's own container | 8B-Q5 quantized model | `docs/STAGE1_TARGET.md` §1/§6, `nvidia-smi` confirms ~7.8/12 GB VRAM resident |
+| Judge / Orchestrator / Documentation Agents | none -- deterministic Python, no model instance, no model call, in the same process as every other role | N/A in the shipped default path; each exposes an optional model-backed seam (`scorer`/`ranker`/`narrator`) that a stock instruct model could later fill (no uncensored requirement -- none of the three is a generation-under-refusal-pressure task) | `docs/ARCHITECTURE.md` §4 |
+| Target's answer model | GPU-resident, target's own container | 8B-Q5 quantized model | `docs/STAGE1_TARGET.md` §1/§6, `nvidia-smi` confirms ~7.8/12 GB VRAM resident |
 | Target's document-ingestion VLM | ollama-only, GPU when loaded | `qwen2.5vl:7b` | `planning/PHASE3_KICKOFF_PROMPT.md` (cited by `docs/ARCHITECTURE.md`) |
 
 **One honestly-flagged discrepancy between the design doc and the shipped
@@ -403,6 +404,7 @@ those changes included, not a pre-change baseline.
 ## 5. Eval-result evidence
 
 ### 5.1 The 375-test suite (269 in CI)
+
 `pytest tests/ -q` → **375 passed** with the sibling Phase 2 checkout
 present, re-confirmed for this packet (§4.1); **269 passed, 106 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
@@ -518,6 +520,7 @@ to approve and nothing already filed.
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
   the repo has since grown to 375 total with the sibling checkout present,
   or 269 passed / 106 skipped without it, §5.1).
+
 ### 5.4 Load-test numbers
 
 Full detail in `docs/LOAD_TEST.md`; headline figures, MEASURED (not
