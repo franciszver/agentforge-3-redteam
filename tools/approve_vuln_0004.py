@@ -152,19 +152,21 @@ def main() -> int:
     # (no longer reachable in practice, but harmless to keep) construction
     # that somehow didn't load it.
     already_loaded = documentation.get_pending(_EXPLOIT_ID)
-    if already_loaded is not None:
-        # Cold-review fix (this PR): ``already_loaded`` is read straight back
-        # off ``_PENDING_PATH`` by ``DocumentationAgent.__init__``'s auto-load
-        # -- it is THE SAME FILE this script is trying to authenticate, not
-        # independent evidence. It is used ONLY below to satisfy
-        # ``approve()``'s in-memory precondition (the exploit_id must be a
-        # key in ``documentation._pending``); it must never be the left-hand
-        # side of the field-for-field comparison, or the check degenerates
-        # into comparing the on-disk file against itself, which always
-        # passes regardless of tampering.
-        pre_approval = {**already_loaded, "status": "pending_human_approval"}
-    else:
-        pre_approval = _file_pending(
+    if already_loaded is None:
+        # Cold-review fix (this PR): the return value is deliberately
+        # unused -- ``_file_pending``'s only job here is its SIDE EFFECT
+        # (populating ``documentation``'s in-memory ``_pending`` so
+        # ``approve()`` below has something to pop). Below, the pending
+        # report is re-derived independently via ``build_vuln_report``
+        # directly from ``record`` and compared against what is on disk --
+        # never against this call's return value, nor against
+        # ``already_loaded`` (which, when present, is read straight back
+        # off ``_PENDING_PATH`` by ``DocumentationAgent.__init__``'s
+        # auto-load -- THE SAME FILE this script is trying to authenticate,
+        # not independent evidence; using it as the comparison target would
+        # degenerate into comparing the on-disk file against itself, which
+        # always passes regardless of tampering).
+        _file_pending(
             documentation,
             record,
             filed_at=original_filed_at,
@@ -174,8 +176,8 @@ def main() -> int:
 
     # Authoritative re-derivation: rebuild what the pending report SHOULD be
     # directly from the re-derived ``record`` via ``build_vuln_report`` --
-    # NOT from ``pre_approval``/``already_loaded`` above, which (when the
-    # auto-load path is taken, i.e. in every real re-run) is itself read off
+    # NOT from ``already_loaded`` above, which (when the auto-load path is
+    # taken, i.e. in every real re-run) is itself read straight back off
     # ``_PENDING_PATH``. Comparing THIS reconstruction against what is
     # already committed on disk is what makes this a real cross-check: it
     # fires on any FIELD-VALUE drift between the artifact and what the

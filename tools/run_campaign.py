@@ -201,11 +201,23 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return args
 
 
-def _cmd_list_pending(args: argparse.Namespace) -> int:
+def _load_documentation(args: argparse.Namespace) -> DocumentationAgent | None:
+    """Construct a ``DocumentationAgent`` over ``args.reports_dir``, or print
+    a clean CLI-boundary message and return ``None`` on a load failure
+    (e.g. a malformed/unrelated JSON file under ``reports_dir``) instead of
+    letting ``DocumentationAgentError`` escape as a raw traceback -- shared
+    by ``--list-pending`` and ``--approve``, both of which used to duplicate
+    this same try/except."""
     try:
-        documentation = DocumentationAgent(reports_dir=args.reports_dir)
+        return DocumentationAgent(reports_dir=args.reports_dir)
     except DocumentationAgentError as exc:
         print(f"could not load reports_dir={args.reports_dir}: {exc}", file=sys.stderr)
+        return None
+
+
+def _cmd_list_pending(args: argparse.Namespace) -> int:
+    documentation = _load_documentation(args)
+    if documentation is None:
         return 1
     pending = documentation.all_pending()
     print(f"pending_human_triage_count={len(pending)} (reports_dir={args.reports_dir})")
@@ -233,10 +245,8 @@ def _cmd_approve(args: argparse.Namespace) -> int:
     than a warning that silently approves as-is -- a typo'd path must not
     be the thing that downgrades the one safety flag to a no-op.
     """
-    try:
-        documentation = DocumentationAgent(reports_dir=args.reports_dir)
-    except DocumentationAgentError as exc:
-        print(f"could not load reports_dir={args.reports_dir}: {exc}", file=sys.stderr)
+    documentation = _load_documentation(args)
+    if documentation is None:
         return 1
     pending = documentation.get_pending(args.approve)
     if pending is None:
