@@ -5,8 +5,7 @@ if approved, publish as the `v3.0.0` GitHub Release — the **first tag in
 this repository**. Nothing here has been tagged or published; this file is
 the proposal.
 
-## The differentiator: attack generation and grading are separated, and the
-## separation is enforced by a test, not a convention
+## The differentiator: attack generation and grading are separated, and the separation is enforced by a test, not a convention
 
 The Red Team Agent (which attacks) and the Judge Agent (which grades) run
 as separate OS processes with separate contexts. The Judge never reads the
@@ -26,8 +25,10 @@ Six components, split across two trust zones, per `docs/ARCHITECTURE.md`:
 - **Red Team Agent** (`redteam/agents/red_team.py`) — generates and mutates
   adversarial probes. Runs on a local, CPU-only, abliterated model
   (`DEFAULT_MODEL = "huihui_ai/qwen2.5-abliterate:7b"`), swappable via
-  config, chosen specifically because a safety-tuned model under-refuses
-  its own job as an attacker.
+  config, chosen specifically because a safety-tuned model (`gemma4:e4b`
+  was measured and refused outright) over-refuses its own job as an
+  attacker, which would silently cap attack-suite coverage at whatever it
+  was willing to write.
 - **Judge Agent** (`redteam/agents/judge.py`) — independently scores each
   target response against a case's success criteria; the trust boundary
   above is its defining property.
@@ -64,7 +65,7 @@ at `v2.0.0` (`docs/vuln_reports/VULN-0001.json` through `VULN-0004.json`):
 |---|---|---|
 | **VULN-0001** | Critical | Auth bypass — the default bearer-token validator (`copilot_per_user_token_enabled=False`) accepts any non-empty token, no signature or identity check. |
 | **VULN-0002** | Critical | A discontinued medication is reported as currently-taking and marked `verified` — citation checking confirms provenance (the value appears in a tool result) but never checks the record's own `status` field. |
-| **VULN-0003** | Critical | A topically irrelevant `SourceRef` verifies an unrelated claim (an appointment record's `status` field cited to back a blood-pressure claim) — same root cause as VULN-0002, separately reproduced and separately approved. **This finding reproduces on the shipped planner** — it is not a config-dependent or environment-specific artifact. |
+| **VULN-0003** | Critical | A topically irrelevant `SourceRef` verifies an unrelated claim (an appointment record's `status` field cited to back a blood-pressure claim) — same root cause as VULN-0002, separately reproduced and separately approved. **This finding reproduces on the shipped planner's own behavior** (`docs/THREAT_MODEL.md` §2.4 "tool misuse": the planner substitutes an unexpected tool call — here `get_appointments` in place of a vitals lookup — and the resulting coincidental-match citation still passes verification), not a hand-crafted or hypothetical citation. |
 | **VULN-0004** | Medium | `/chat`'s `message` field carries no length bound anywhere in the stack, and `ConversationStore` (`chat.py:570-594`) never evicts, TTLs, or caps retained conversations — accepted-and-unbounded, not rejected-and-cheap. |
 
 Full detail, clinical-impact framing, and remediation guidance for each is
@@ -102,11 +103,12 @@ fixed, conditionally or otherwise:
   the exact gap VULN-0002/0003 describe.
 
 This is not a case of upstream ignoring the problem. Both new modules are
-real, deliberate engineering: `tool_call_scoping.py`'s own review found the
-naive alternative "NOT fit to enable as shipped" (negation-blind, bypassed
-by short claims) and shipped a coarser, owner-approved mitigation instead,
-default-off with the in-code comment *"Default OFF: byte-identical to
-today."* The findings were reported upstream as
+real, deliberate engineering: `answer_grounding.py`'s own adversarial
+review (issue #153) found its heuristic "NOT fit to enable as shipped"
+(negation-blind, short claims bypass the ratio, wrong numeric values pass
+outright), and `tool_call_scoping.py` was shipped as a "coarser,
+owner-approved alternative" after that review. Both ship default-off, with
+the in-code comment *"Default OFF: byte-identical to today."* The findings were reported upstream as
 [agentforge-2-evidence-agent#167](https://github.com/franciszver/agentforge-2-evidence-agent/issues/167)
 — documentation only, no fix proposed or implied, consistent with this
 project's rules of engagement (no production code changes from Phase 3

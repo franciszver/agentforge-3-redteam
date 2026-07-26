@@ -70,6 +70,7 @@ def test_release_notes_finding_count_matches_owner_approved_reports():
         f"expected 4 owner-approved vuln reports, found {len(report_files)}: "
         f"{[f.name for f in report_files]}"
     )
+    severities = set()
     for report_file in report_files:
         report = json.loads(report_file.read_text(encoding="utf-8"))
         report_id = report["report_id"]
@@ -81,9 +82,7 @@ def test_release_notes_finding_count_matches_owner_approved_reports():
             f"{report_file} is not owner-approved (no approved_by) -- "
             "release notes must not cite it as a shipped finding"
         )
-    severities = {
-        json.loads(f.read_text(encoding="utf-8"))["severity"] for f in report_files
-    }
+        severities.add(report["severity"])
     assert severities == {"critical", "medium"}, severities
 
 
