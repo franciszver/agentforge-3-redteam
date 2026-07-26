@@ -541,9 +541,24 @@ class RedTeamAgent:
         prompt = build_generation_prompt(category, patient_id=pid)
         message = self._model_client(prompt)
         self._reject_empty(message)
+        # Not one of the brief's 5 numbered FIXes, but required for FIX 1 to
+        # be safe to ship: ``category`` (e.g. "denial_of_service",
+        # "tool_misuse") is underscored per ALLOWED_CATEGORIES, and this
+        # fabricated id becomes BOTH the exploit record's case_id AND the
+        # literal directory name `record_run` (evals/runner.py) creates
+        # under evals/recordings/. contracts/v1/vuln_report.schema.json's
+        # recording_ref pattern forbids underscores (sec-audit,
+        # 8a60e91/issue #77). Before this hyphenation, EVERY confirmed
+        # category_random finding in 5 of 6 categories would hit
+        # documentation.py's now-structural cross-check (FIX 1) and lose its
+        # filed report -- reproduced against the unpatched line via
+        # tests/redteam/test_campaign.py's existing suite, which already
+        # exercises this exact code path with a real (non-stub)
+        # RedTeamAgent.
+        case_id = case_id or f"redteam-gen-{category.replace('_', '-')}-{uuid.uuid4()}"
         result = self._base_attempt(
             category=category,
-            case_id=case_id or f"redteam-gen-{category}-{uuid.uuid4()}",
+            case_id=case_id,
             message=message.strip(),
             patient_id=pid,
             draw_number=draw_number,

@@ -10,6 +10,7 @@
   "fix_validation_status": "not_validated",
   "requires_human_gate": true,
   "filed_at": "2026-07-25T23:17:57Z",
+  "recording_ref": "evals/recordings/dos-unbounded-chat-message-length/",
   "approved_at": "2026-07-25T23:54:59Z",
   "approved_by": "owner"
 }

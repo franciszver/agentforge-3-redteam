@@ -205,6 +205,24 @@ def test_narrator_seam_polishes_prose_without_a_live_model():
     assert narrated["report_id"] == plain["report_id"]
 
 
+def test_narrator_cannot_repoint_recording_ref():
+    """Issue #77 sec-audit: a narrator that tries to redirect a reader at
+    different (wrong) evidence must be ignored, the same as any other
+    safety-relevant field -- recording_ref is in
+    ``_NARRATOR_PROTECTED_FIELDS`` for exactly this reason."""
+
+    def malicious_narrator(exploit_record, deterministic_report):
+        return {"recording_ref": "evals/recordings/some-other-unrelated-case/"}
+
+    plain = build_vuln_report(NON_CRITICAL_EXPLOIT, filed_at="2026-07-21T10:10:00Z")
+    narrated = build_vuln_report(
+        NON_CRITICAL_EXPLOIT, filed_at="2026-07-21T10:10:00Z", narrator=malicious_narrator
+    )
+
+    assert narrated["recording_ref"] == plain["recording_ref"]
+    assert narrated["recording_ref"] == "evals/recordings/dos-overlong-query-max-query-chars/"
+
+
 def test_narrator_output_still_validated_against_contract():
     """A narrator that produces a schema-breaking report must be rejected,
     not silently filed."""
@@ -425,6 +443,107 @@ def test_approve_removes_the_actual_source_path_not_a_report_id_guess(tmp_path):
 
     assert not source_path.exists()
     assert (tmp_path / "VULN-0001.json").exists()
+
+
+def test_recording_ref_derives_from_the_records_own_ref_not_case_id():
+    """Cold-review FIX 1 (issue #77 follow-up): for a campaign-generated
+    attempt, ``exploit_record["case_id"]`` is ``verdict["case_id"]`` (the
+    matched ``AttackCase.id``), but the recording on disk is written under
+    ``attempt["case_id"]`` -- for a ``category_random``/``mutation_of``
+    selector that is a FABRICATED id
+    (``redteam-gen-<category>-<uuid>`` / ``<prior>-mut-<hex>``,
+    redteam/agents/red_team.py:529,546), never the matched case's id.
+    ``campaign.py`` already stores the record's OWN correct
+    ``recording_ref`` (``str(recording_path)`` from ``record_run``,
+    campaign.py:390-409) -- ``build_vuln_report`` must derive the report's
+    ``recording_ref`` from THAT field, not re-derive a path from
+    ``case_id`` that a fabricated-id attempt will get wrong."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["case_id"] = "dos-overlong-query-max-query-chars"  # the matched AttackCase.id
+    record["recording_ref"] = (
+        "evals/recordings/redteam-gen-denial-of-service-81fc3b09-0000-0000-0000-000000000000/"
+        "20260722T031540Z-draw1.json"
+    )
+    report = build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+    assert report["recording_ref"] == (
+        "evals/recordings/redteam-gen-denial-of-service-81fc3b09-0000-0000-0000-000000000000/"
+    )
+    assert record["recording_ref"].startswith(report["recording_ref"])
+
+
+def test_contract_legal_underscored_or_uppercase_case_id_does_not_lose_the_finding():
+    """Cold-review FIX 2 (issue #77 follow-up): exploit_record.schema.json's
+    ``case_id`` is ``{type: string, minLength: 1}`` -- no character
+    restriction -- so an underscored or uppercase ``case_id`` is
+    contract-legal. Before FIX 1, ``build_vuln_report`` derived
+    ``recording_ref`` AS ``f"evals/recordings/{case_id}/"``, so this
+    contract-legal input produced a report that failed
+    ``vuln_report.schema.json``'s ``recording_ref`` pattern (no underscores/
+    uppercase) -- raising ``DocumentationAgentError`` only after the exploit
+    was already confirmed and stored, which ``redteam.campaign.run_campaign``
+    catches and ``continue``s past (campaign.py:445-460), silently losing
+    the filed report (the ExploitDB record survives; nothing under
+    docs/vuln_reports/ ever does).
+
+    FIX 1's redesign (recording_ref derives from the record's OWN
+    recording_ref, never case_id) structurally fixes this: case_id's
+    character set no longer feeds any path derivation at all, so this
+    contract-legal value can never again cause a late schema rejection.
+    This test restores the coverage tests/tools/test_build_vuln_reports_gate.py
+    lost when its fixture was switched from underscored to hyphenated
+    (commit 8a60e91) -- proving the underscored/uppercase case is filed,
+    not dropped."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["case_id"] = "DOS_Overlong_Query_MAX_Query_Chars"  # underscored AND uppercase
+    agent = DocumentationAgent(reports_dir=None)
+    report = agent.file_report(record)
+    assert report["status"] == "filed"
+    assert report["recording_ref"] == "evals/recordings/dos-overlong-query-max-query-chars/"
+
+
+def test_recording_ref_derivation_rejects_an_underscored_recording_directory():
+    """A record whose real recording directory name is not schema-valid
+    (e.g. underscored) must fail loudly rather than derive an invalid
+    report recording_ref -- this is the failure mode red_team.py's
+    hyphenated fabrication (see test_red_team_agent.py) exists to prevent
+    in practice."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "evals/recordings/redteam_gen_bad/20260722T031540Z-draw1.json"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
+def test_recording_ref_derivation_rejects_a_ref_with_no_parent_directory():
+    """A record whose own recording_ref is a bare filename (no directory at
+    all) must fail loudly -- there is nothing to derive a directory from."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "draw1.json"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
+def test_recording_ref_derives_correctly_when_recordings_dir_is_a_scratch_tempdir():
+    """Deep-review regression test: tools/load_test_replay.py deliberately
+    points campaign.py's recordings_dir at a scratch tempdir named e.g.
+    'agentforge3-load-test-recordings-<hex>' (not literally 'recordings',
+    and not under the repo root) so it never floods the committed
+    evals/recordings/ tree. An earlier version of _recording_ref_for
+    required a literal 'recordings' path segment, which rejected every
+    confirmed exploit this real tool produces -- reproduced as 0/3
+    filed_reports, all 3 signalled vuln_report_filing_failed, before this
+    was caught in review. The fix (take the file's own immediate parent
+    directory name, with no assumption about the grandparent's name or
+    location) must handle this real caller."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = (
+        r"C:\Users\someone\AppData\Local\Temp\agentforge3-load-test-recordings-ab12cd34"
+        r"\redteam-gen-data-exfiltration-89b57a32-02e6-4cee-89fc-9ab29ddc795e"
+        r"\20260726T055549Z-draw1.json"
+    )
+    report = build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+    assert report["recording_ref"] == (
+        "evals/recordings/redteam-gen-data-exfiltration-89b57a32-02e6-4cee-89fc-9ab29ddc795e/"
+    )
 
 
 def test_all_categories_map_to_a_valid_severity_and_pass_schema():

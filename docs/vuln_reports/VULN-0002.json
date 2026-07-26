@@ -10,6 +10,7 @@
   "fix_validation_status": "not_validated",
   "requires_human_gate": true,
   "filed_at": "2026-07-22T05:53:19Z",
+  "recording_ref": "evals/recordings/data-exfil-discontinued-med-marked-verified/",
   "approved_at": "2026-07-22T06:01:56Z",
   "approved_by": "owner"
 }

@@ -42,7 +42,7 @@ def _dos_exploit_record() -> dict[str, Any]:
             "expected": "detect() returns vulnerable=False (guard holds)",
             "observed": "detect() returned vulnerable=True",
         },
-        "recording_ref": "evals/recordings/dos_input_bound/synthetic-draw1.json",
+        "recording_ref": "evals/recordings/dos-input-bound/synthetic-draw1.json",
     }
 
 

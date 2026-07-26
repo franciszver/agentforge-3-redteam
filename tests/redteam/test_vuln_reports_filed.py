@@ -107,6 +107,58 @@ def test_vuln_0004_is_approved_and_filed():
     assert not stale_pending.exists(), f"stale pending artifact still present: {stale_pending}"
 
 
+def test_every_filed_report_names_its_own_evidence_via_recording_ref():
+    """Issue #77 (P3.36): a filed report must resolve to its own evidence --
+    the report -> recording mapping must not live ONLY in
+    docs/ATO_EVIDENCE_PACKET.md §5.2, a hand-maintained table in a
+    different document. Every FILED report under docs/vuln_reports/ (not
+    still-pending ones -- see _KNOWN_OPEN_PENDING above) must carry a
+    ``recording_ref`` that:
+
+      1. is present (the schema keeps it *optional* -- additive, stays
+         contract v1, see contracts/README.md's versioning log -- but this
+         test is this repo's actual enforced POLICY that every report this
+         project files must have one; a schema-level ``required`` would
+         also force every future, unrelated consumer/producer of this
+         contract to carry the field even when it has no recording, which
+         is not this contract's job to mandate globally),
+      2. resolves to a directory that actually exists under the repo root, and
+      3. contains at least one recorded draw file (``*-draw*.json``, the
+         glob ``tools/build_vuln_reports.py::_load_recordings`` already
+         uses) -- an empty or wrong directory is not real evidence.
+
+    This is also this repo's guard against a FUTURE report being filed
+    without one: any new report dropped into docs/vuln_reports/ without a
+    resolving recording_ref fails this test immediately, the same way
+    test_three_critical_reports_are_filed_and_contract_valid already guards
+    report-level schema validity.
+    """
+    validator = Draft202012Validator(_schema())
+    filed_paths = [
+        p
+        for p in sorted(_REPORTS_DIR.glob("*.json"))
+        if not p.name.endswith(".pending-human-approval.json")
+    ]
+    assert filed_paths, f"expected at least one filed report under {_REPORTS_DIR}"
+
+    for path in filed_paths:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        errors = list(validator.iter_errors(report))
+        assert errors == [], f"{path} failed schema validation: {errors}"
+
+        assert "recording_ref" in report, f"{path} has no recording_ref -- names no evidence"
+        recording_ref = report["recording_ref"]
+        assert recording_ref.startswith("evals/recordings/") and recording_ref.endswith("/"), (
+            f"{path}: recording_ref {recording_ref!r} is not an evals/recordings/<dir>/ path"
+        )
+
+        recording_dir = _REPO_ROOT / recording_ref
+        assert recording_dir.is_dir(), f"{path}: recording_ref {recording_ref!r} does not resolve to a directory"
+
+        draws = sorted(recording_dir.glob("*-draw*.json"))
+        assert draws, f"{path}: recording_ref {recording_ref!r} contains no recorded draw file"
+
+
 def test_three_critical_reports_are_filed_and_contract_valid():
     validator = Draft202012Validator(_schema())
     expected_ids = {"VULN-0001", "VULN-0002", "VULN-0003"}

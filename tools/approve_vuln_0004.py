@@ -185,17 +185,22 @@ def main() -> int:
     # tampering or corruption. Compared as parsed JSON, not byte-for-byte
     # (key order, indentation, trailing-newline differences are normalised
     # away). Note what never enters this comparison at all, because it never
-    # enters the vuln_report in the first place (see documentation.py's "Why
-    # the vuln_report contract has no minimal_repro/recording_ref" section):
-    # the exploit record's case_id, attempt_id, verdict_id, source,
-    # recording_ref, and minimal_repro.steps, plus confirmed_at (which
+    # enters the vuln_report in the first place (see documentation.py's
+    # module docstring): the exploit record's case_id, attempt_id,
+    # verdict_id, source, and minimal_repro.steps -- NOT recording_ref,
+    # which DOES enter the vuln_report as of issue #77/P3.36 and is checked
+    # below like every other report-body field (cold-review FIX 5, issue #77
+    # follow-up: this comment used to say recording_ref never entered the
+    # report, which stopped being true the moment it became a report field)
+    # -- plus confirmed_at (which
     # _build_exploit_record() sets to now_iso() every run, per
     # tools/build_vuln_report_p3_54.py:88-89, so it genuinely differs run to
     # run). None of that is a gap: the owner-reviewed BYTES are the report
     # body being compared here, and every field the report body actually
     # contains (schema_version, report_id, exploit_id, severity,
     # clinical_impact, observed, expected, remediation,
-    # fix_validation_status, requires_human_gate, filed_at) is checked.
+    # fix_validation_status, requires_human_gate, filed_at, and -- since
+    # issue #77/P3.36 -- recording_ref) is checked.
     reconstructed_body = build_vuln_report(
         record,
         report_id=pending_on_disk["report_id"],

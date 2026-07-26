@@ -30,6 +30,20 @@ initial cut.
 
 **Log:**
 
+- Issue #77: `vuln_report.schema.json` gained an optional `recording_ref`
+  property (directory under `evals/recordings/` backing the report's
+  evidence, computed by `build_vuln_report()` from the source exploit
+  record's `case_id`). Not added to `required`, so a pre-#77 PRODUCER that
+  omits the field stays schema-valid — additive, stays `v1`, same shape as
+  the earlier `approved_by` addition. **Same one-directional trap as
+  issue #63's log entry below, restated precisely rather than glossed
+  over**: this schema's `additionalProperties: false` (unchanged) means a
+  pre-#77 CONSUMER validating an incoming report against its OWN pinned
+  copy of this schema will reject any report that now carries
+  `recording_ref` — a consumer must update its own copy of the schema (or
+  relax `additionalProperties`) before it can accept a post-#77 producer's
+  output. It is not accurate to say "consumers are unaffected" just
+  because the property is optional on the producer side.
 - Issue #63: `observability_snapshot.schema.json` gained an optional
   `pending_human_triage_count` property (durable count of reports still
   awaiting human triage). Not added to `required`, so a pre-#63 PRODUCER

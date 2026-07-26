@@ -97,15 +97,16 @@ fails schema validation raises ``DocumentationAgentError`` at construction
 time rather than being silently skipped -- a reports_dir this module can't
 read must fail loudly, not quietly lose a pending report.
 
-## Why the vuln_report contract has no ``minimal_repro``/``recording_ref``
+## Why the vuln_report contract has no ``minimal_repro.steps``, and how
+## ``recording_ref`` works (issue #77/P3.36)
 
 ``vuln_report.schema.json`` is ``additionalProperties: false`` and has no
-``steps``/``recording_ref`` field -- ``observed``/``expected`` are copied
-verbatim from the exploit record's ``minimal_repro`` onto the report, and
-the report's own ``exploit_id`` is the join key back to the full
-``ExploitRecord`` (its ``minimal_repro.steps`` and ``recording_ref``) that
-produced it. **This join key is in-process only** -- ``ExploitDB`` is
-sqlite-backed but every report-builder in this repo constructs
+``steps`` field -- ``observed``/``expected`` are copied verbatim from the
+exploit record's ``minimal_repro`` onto the report; the full repro steps
+stay on the ``ExploitRecord``, not the report. The report's own
+``exploit_id`` is the join key back to that full ``ExploitRecord`` --
+**but that join key is in-process only**: ``ExploitDB`` is sqlite-backed
+but every report-builder in this repo constructs
 ``DocumentationAgent(reports_dir=None)`` (``tools/build_vuln_reports.py``,
 ``tools/build_vuln_report_p3_54.py``, ``tools/load_test_replay.py``,
 ``tools/run_campaign.py``) and none calls ``ExploitDB.add_record`` against
@@ -115,23 +116,46 @@ a committed, on-disk database, so there is no persisted exploit DB an
 filed report reproducible by an engineer with zero platform context is
 NOT the ``exploit_id`` resolving to a committed database -- it is the
 durable, already-committed evidence under ``evals/recordings/<probe-name>/``.
-**No report names its own evidence** -- ``vuln_report.schema.json`` is
-``additionalProperties: false`` with no ``recording_ref`` field (see
-above), so a filed ``docs/vuln_reports/<report_id>.json`` cannot and does
-not point at its recording; that report-to-recording mapping lives ONLY
-in ``docs/ATO_EVIDENCE_PACKET.md`` §5.2, which a reader must consult
-separately. Nor do ``observed``/``expected`` carry repro steps -- they
-carry the *detection signal* ``Judge.detect()`` produced (e.g.
-``"detect() returned vulnerable=True, label='garbage_token_accepted'"``),
-not an endpoint, payload, token, or case module; the actual runnable
-repro is the paired ``evals/cases/<case>.py`` detection logic plus the
-committed recording JSON under ``evals/recordings/<probe-name>/`` that
-§5.2 maps the report to.
+
+**A report DOES name its own evidence** (as of issue #77): the schema's
+``recording_ref`` property (optional -- additive, stays contract ``v1``,
+see ``contracts/README.md``'s versioning log) is a directory under
+``evals/recordings/`` (e.g. ``"evals/recordings/identity-authz-garbage-
+bearer-token/"``, trailing slash, no filename) containing the committed,
+replayable draw(s) backing the finding. ``build_vuln_report`` computes it
+deterministically from the source exploit record's own required
+``recording_ref`` field (see ``_recording_ref_for``): the record's
+``recording_ref`` -- set by ``campaign.py`` from the actual path
+``record_run`` wrote the recording to -- has its filename stripped, leaving
+the immediate containing directory's name (not repo-root-relativised: real
+callers legitimately point ``record_run``'s ``recordings_dir`` outside the
+repo, e.g. ``tools/load_test_replay.py``'s scratch tempdir). This is
+deliberately NOT re-derived from ``case_id``: a live campaign's
+``category_random``/``mutation_of`` attempts record under a fabricated id
+(``attempt["case_id"]``) that can diverge from the exploit record's own
+``case_id`` (``verdict["case_id"]``, the matched ``AttackCase.id`` --
+cold-review FIX 1, issue #77 follow-up), so reconstructing
+``evals/recordings/<case_id>/`` from ``case_id`` alone can silently point at
+the wrong directory. It is never hand-typed onto a report, and a narrator
+cannot override it (see
+``_NARRATOR_PROTECTED_FIELDS`` below -- letting prose-polishing logic
+repoint a reader at the wrong evidence would defeat the whole point of the
+field). A filed ``docs/vuln_reports/<report_id>.json`` now resolves to its
+own evidence directly; ``docs/ATO_EVIDENCE_PACKET.md`` §5.2's table is
+still there as a human-readable index across all findings, but a reader no
+longer has to cross-reference it just to find one report's recording.
+Nor do ``observed``/``expected`` carry repro steps -- they carry the
+*detection signal* ``Judge.detect()`` produced (e.g. ``"detect() returned
+vulnerable=True, label='garbage_token_accepted'"``), not an endpoint,
+payload, token, or case module; the actual runnable repro is the paired
+``evals/cases/<case>.py`` detection logic plus the committed recording
+JSON under the report's own ``recording_ref``.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -254,9 +278,19 @@ _DEFAULT_REMEDIATION = (
 
 # Fields a narrator is not allowed to change via its return value -- the
 # safety-relevant/identity fields stay purely deterministic even when a
-# narrator is wired in.
+# narrator is wired in. ``recording_ref`` is here (issue #77) for the same
+# reason as the rest: a narrator that could repoint it would let
+# prose-polishing logic misdirect a reader at the wrong evidence directory.
 _NARRATOR_PROTECTED_FIELDS = frozenset(
-    {"schema_version", "report_id", "exploit_id", "severity", "requires_human_gate", "filed_at"}
+    {
+        "schema_version",
+        "report_id",
+        "exploit_id",
+        "severity",
+        "requires_human_gate",
+        "filed_at",
+        "recording_ref",
+    }
 )
 
 
@@ -278,6 +312,65 @@ def _report_id_for(exploit_id: str) -> str:
             f"cannot derive a report_id from exploit_id {exploit_id!r} (expected 'EXP-NNNN')"
         )
     return "VULN-" + exploit_id.split("-", 1)[1]
+
+
+_RECORDING_DIR_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\Z")
+
+
+def _recording_ref_for(exploit_record: Mapping[str, Any]) -> str:
+    """Derive the report's ``recording_ref`` from the exploit record's OWN
+    ``recording_ref`` (the directory containing it), never re-derived from
+    ``case_id``.
+
+    Cold-review FIX 1 (issue #77 follow-up): ``campaign.py`` sets a
+    confirmed exploit record's ``case_id`` to ``verdict["case_id"]`` (the
+    matched ``AttackCase.id``), while the recording on disk is written under
+    ``attempt["case_id"]`` via ``record_run``. For a ``category_random`` or
+    ``mutation_of`` directive selector those two ids diverge -- the attempt's
+    id is a fabricated ``redteam-gen-<category>-<uuid>`` /
+    ``<prior>-mut-<hex>`` (redteam/agents/red_team.py:529,546) that never
+    equals the matched case's id. Re-deriving ``evals/recordings/<case_id>/``
+    from ``case_id`` therefore silently points a live-campaign report at the
+    WRONG recording directory. The record's own ``recording_ref`` (set from
+    ``str(recording_path)``, campaign.py:390-409) is always correct, so this
+    takes the file's own immediate parent directory name instead.
+
+    Deliberately NOT anchored on a literal ``evals/recordings/`` prefix or a
+    ``recordings`` path segment, and NOT relativised against the repo root:
+    ``evals.runner.record_run`` always writes
+    ``<recordings_dir>/<id>/<timestamp>-draw<N>.json`` (evals/runner.py:187-
+    190), so the file's parent directory name IS the meaningful identifier
+    regardless of what ``<recordings_dir>`` itself is named or where it
+    lives -- and real callers legitimately vary it: production uses the real
+    ``evals/recordings/`` (repo-root-relative), tests point it at a
+    ``tmp_path`` (outside the repo entirely), and
+    ``tools/load_test_replay.py`` deliberately points it at a scratch
+    tempdir named e.g. ``agentforge3-load-test-recordings-<hex>`` (not
+    literally ``recordings``, and outside the repo root) to avoid flooding
+    the committed tree. An earlier version of this function required a
+    literal ``recordings`` path segment as a "structural cross-check" --
+    that requirement rejected every confirmed exploit
+    ``tools/load_test_replay.py`` produces (its scratch dir's basename does
+    not equal ``recordings``), reproduced as 0/3 ``filed_reports`` with all
+    3 signalled ``vuln_report_filing_failed`` before this was caught in
+    review and reverted to the simpler, universally-correct invariant below.
+    """
+    raw_ref = _require(exploit_record, "recording_ref")
+    normalized = str(raw_ref).replace("\\", "/")
+    parts = [p for p in normalized.split("/") if p not in ("", ".")]
+    if len(parts) < 2:
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} has no parent "
+            "directory -- cannot derive a report recording_ref from it"
+        )
+    dir_name = parts[-2]
+    if not _RECORDING_DIR_NAME_RE.match(dir_name):
+        raise DocumentationAgentError(
+            f"exploit_record recording_ref {raw_ref!r} has recording "
+            f"directory name {dir_name!r}, which is not "
+            "[a-z0-9][a-z0-9-]* -- refusing to derive an invalid report recording_ref"
+        )
+    return f"evals/recordings/{dir_name}/"
 
 
 def _require(exploit_record: Mapping[str, Any], key: str) -> Any:
@@ -317,6 +410,7 @@ def build_vuln_report(
     exploit_id = _require(exploit_record, "exploit_id")
     category = _require(exploit_record, "category")
     repro = _require(exploit_record, "minimal_repro")
+    _require(exploit_record, "case_id")  # still a required exploit_record field; unused here (FIX 1, issue #77 follow-up)
     severity = SEVERITY_BY_CATEGORY.get(category, _DEFAULT_SEVERITY)
 
     report: dict[str, Any] = {
@@ -331,6 +425,11 @@ def build_vuln_report(
         "fix_validation_status": fix_validation_status,
         "requires_human_gate": severity == "critical" or force_human_gate,
         "filed_at": filed_at or now_iso(),
+        # Cold-review FIX 1 (issue #77 follow-up): derived from the exploit
+        # record's OWN recording_ref (see _recording_ref_for), never from
+        # case_id -- never hand-typed, never narrator-overridable (see
+        # _NARRATOR_PROTECTED_FIELDS).
+        "recording_ref": _recording_ref_for(exploit_record),
     }
 
     if narrator is not None:
