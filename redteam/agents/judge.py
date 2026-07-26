@@ -19,8 +19,9 @@ nothing from any *sibling* agent, the stateful Regression Harness, or the
 Observability layer, so independence holds going forward too -- see
 ``tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals``,
 which ast-scans this file's imports for `redteam.agents`/`redteam.harness`/
-`redteam.observability` prefixes -- that scan's own documented limits
-(alias imports, `importlib`, dynamic strings) are in its docstring).
+`redteam.observability` prefixes, including relative and aliased forms --
+that scan's own documented limits (`importlib`, dynamic strings, attribute
+access after a bare `import redteam`) are in its docstring).
 
 ## Outcome mapping (the deterministic core)
 

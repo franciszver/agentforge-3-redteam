@@ -135,7 +135,14 @@ def test_independence_module_imports_no_red_team_or_sibling_agent_internals():
     ## What this guard does NOT catch (issue #73)
 
     This is an AST scan over ``import`` / ``from ... import`` statements in
-    ``judge.py`` only. It does not, and cannot without much heavier static
+    ``judge.py`` only. It resolves both absolute and relative imports
+    (``from .red_team import X``, ``from . import red_team``, ``from
+    ..observability.action_log import ActionLog``) to the fully-qualified
+    module they refer to, and catches aliased forms too (``import
+    redteam.agents.red_team as rt``, ``from redteam.agents import red_team
+    as r2`` -- the ``alias.name``/``node.module`` checked here are the
+    imported dotted path, not the local ``as`` binding, so aliasing does
+    not evade it). It does not, and cannot without much heavier static
     analysis, catch: ``import redteam`` followed by attribute access
     (``redteam.agents.red_team.something``), ``from redteam import agents``,
     dynamic loading via ``importlib.import_module("redteam.agents.red_team")``
@@ -147,15 +154,34 @@ def test_independence_module_imports_no_red_team_or_sibling_agent_internals():
     source = JUDGE_MODULE_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(JUDGE_MODULE_PATH))
     forbidden_prefixes = ("redteam.agents", "redteam.harness", "redteam.observability")
+    # judge.py's own package, as dotted parts -- needed to resolve relative
+    # imports (level > 0) to the fully-qualified module they refer to, the
+    # same way Python's own import machinery would.
+    judge_package_parts = ["redteam", "agents"]
+
+    def _resolve_relative(node: ast.ImportFrom) -> list[str]:
+        base_len = len(judge_package_parts) - (node.level - 1)
+        base = judge_package_parts[:base_len] if base_len > 0 else []
+        prefix = ".".join(base)
+        if node.module:
+            full = f"{prefix}.{node.module}" if prefix else node.module
+            return [full]
+        return [f"{prefix}.{alias.name}" if prefix else alias.name for alias in node.names]
+
     offending: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.startswith(forbidden_prefixes):
                     offending.append(alias.name)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            if node.module.startswith(forbidden_prefixes):
-                offending.append(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                resolved = _resolve_relative(node)
+            elif node.module:
+                resolved = [node.module]
+            else:
+                resolved = []
+            offending.extend(m for m in resolved if m.startswith(forbidden_prefixes))
     assert offending == [], (
         f"judge.py must not import Red Team / sibling-agent / observability internals: {offending}"
     )
