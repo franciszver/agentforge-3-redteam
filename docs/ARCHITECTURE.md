@@ -310,9 +310,9 @@ gold-set verdict on more than 1 in 20 gold cases)**, or if its score on
 **any individual gold case flips from its previous run's score**, the sweep
 is flagged `judge_drift_suspected` in Observability and the Orchestrator
 halts new attack directives until a human reviews the flagged cases —
-correction is a human decision (re-anchor the Judge's prompt/criteria against
-the gold set, or roll back the Judge model version), not an automatic
-re-tuning, so a drifting Judge cannot silently correct itself into a
+correction is a human decision (re-anchor the Judge's `detect`/scoring
+criteria against the gold set, or roll back the Judge/scorer version), not
+an automatic re-tuning, so a drifting Judge cannot silently correct itself into a
 different, unreviewed scoring standard. This threshold and the gold-set
 contents are versioned alongside the inter-agent contracts (P3.12) so a
 threshold change is itself an auditable, reviewed diff.
