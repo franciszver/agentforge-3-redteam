@@ -24,11 +24,15 @@ nothing new, nothing missing).
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 import tools.build_vuln_reports as build_vuln_reports
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _APPROVED_VULN_0001 = {
     "schema_version": "1.0.0",
@@ -159,4 +163,49 @@ def test_main_is_idempotent_when_nothing_on_disk_is_approved(
         "re-running main() with unchanged recordings and no approved report "
         "present rewrote content that should have been left as a no-op "
         "(e.g. a fresh filed_at stamped on unchanged content)"
+    )
+
+
+def test_cli_out_dir_lets_a_reader_regenerate_into_a_scratch_directory(tmp_path: Path) -> None:
+    """RED-FIRST (issue #64 cold-review FIX 2): docs/ATO_EVIDENCE_PACKET.md
+    Sec. 5.2 claims a reader can re-run this script against a scratch
+    directory as a genuine reproduction check -- but pre-fix there is no
+    argparse/env override for ``_REPORTS_DIR`` at all: the CLI ignores any
+    arguments and always targets the hard-coded ``docs/vuln_reports/``. This
+    invokes the REAL CLI (``python tools/build_vuln_reports.py --out-dir
+    <tmp_path>``) as a subprocess -- the only way to prove the *documented,
+    reader-runnable* command actually works, as opposed to the
+    ``monkeypatch.setattr`` used by every other test in this module.
+
+    Safety: even pre-fix (when ``--out-dir`` is silently ignored and the
+    script falls through to the real ``docs/vuln_reports/``), this cannot
+    corrupt real evidence -- VULN-0001..0003 are already owner-approved on
+    disk, so the Layer-1 safety net refuses the ENTIRE run before writing
+    anything, regardless of what directory was intended. The real
+    ``docs/vuln_reports/`` snapshot is asserted unchanged both before and
+    after regardless of outcome, as a second, independent guard.
+    """
+    real_reports_dir = _REPO_ROOT / "docs" / "vuln_reports"
+    real_before = _snapshot(real_reports_dir)
+
+    result = subprocess.run(
+        [sys.executable, str(_REPO_ROOT / "tools" / "build_vuln_reports.py"), "--out-dir", str(tmp_path)],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    real_after = _snapshot(real_reports_dir)
+    assert real_after == real_before, (
+        "the real docs/vuln_reports/ directory changed during this test -- "
+        "this must NEVER happen regardless of --out-dir support"
+    )
+
+    assert result.returncode == 0, (
+        f"expected the CLI to succeed writing into a scratch --out-dir; "
+        f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+    written = sorted(p.name for p in tmp_path.iterdir())
+    assert written == ["VULN-0001.pending-human-approval.json", "VULN-0002.pending-human-approval.json", "VULN-0003.pending-human-approval.json"], (
+        f"expected the three pending reports written into --out-dir {tmp_path}, found: {written}"
     )
