@@ -324,16 +324,51 @@ TRACE_CITATIONS_V210: tuple[tuple[str, str, int, str], ...] = (
         "def append_turn(self, conversation_id: str, turn: Turn) -> None:",
     ),
     # -- v2.1.0-only: the pre-work's "recency-notice fix, live
-    # unconditionally" claim. TRUE narrowly (the field is always set) but
-    # NOT an independent fix of anything -- it only has any effect at all
-    # when combined with the also-default-off tool_call_scoping gate (its
-    # one and only reader, per app.extraction's #158 wiring); it does not
-    # touch VULN-0001/0002/0003/0004's default-config behaviour.
+    # unconditionally" claim. TRUE narrowly (the field is set, ungated by
+    # any flag, whenever a recency notice is actually applied --
+    # extraction.py:959-967's apply_recency_notice returns the result
+    # unmodified at line 962 when there is no notice, so the field is NOT
+    # "always set"; see docs/UPSTREAM_STATUS.md's "note on the orchestrator
+    # pre-work" section) but NOT an independent fix of anything -- it only
+    # has any effect at all when combined with the also-default-off
+    # tool_call_scoping gate (its one and only reader, per app.extraction's
+    # #158 wiring); it does not touch VULN-0001/0002/0003/0004's
+    # default-config behaviour.
     (
         "v2.1.0",
         "services/copilot-agent/app/planner.py",
         218,
         "answer_pre_notice: str | None = None",
+    ),
+    (
+        "v2.1.0",
+        "services/copilot-agent/app/extraction.py",
+        909,
+        "def apply_recency_notice(result: PlannerResult, *, now: datetime) -> PlannerResult:",
+    ),
+    ("v2.1.0", "services/copilot-agent/app/extraction.py", 961, "if not notices:"),
+    ("v2.1.0", "services/copilot-agent/app/extraction.py", 962, "return result"),
+    (
+        "v2.1.0",
+        "services/copilot-agent/app/extraction.py",
+        966,
+        "answer_pre_notice=result.answer,",
+    ),
+    # -- FIX (issue #58 cold review): chat_endpoint's own token validation
+    # (not extract_bearer_token's internal raise, which is a different
+    # line/purpose) is what "already validated the token" in VULN-0001's
+    # write-up refers to.
+    (
+        "v2.1.0",
+        "services/copilot-agent/app/chat.py",
+        1477,
+        "token = extract_bearer_token(authorization)",
+    ),
+    (
+        "v2.1.0",
+        "services/copilot-agent/app/chat.py",
+        1478,
+        "await _validate_token(validator, token)",
     ),
 )
 

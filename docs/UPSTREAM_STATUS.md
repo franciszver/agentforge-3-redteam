@@ -22,7 +22,7 @@
 - **Machine-checked citations:** every `file:line` citation below is
   verified against the pinned tag it names —
   `evals/analysis/v210_upstream_status.py`'s `TRACE_CITATIONS_V210`
-  (52 entries, tagged `v2.0.0` or `v2.1.0` per-citation, extending
+  (58 entries, tagged `v2.0.0` or `v2.1.0` per-citation, extending
   `evals/analysis/dos_input_bound_resolution.py`'s `TRACE_CITATIONS`
   pattern), checked line-for-line by
   `tests/test_v210_upstream_status.py::TestCitationsAgainstPinnedTargets`
@@ -113,8 +113,12 @@ the auth block and both feeding `run_verification`, not authentication.
 **`v2.1.0`, both new gates enabled:** **still holds.** Neither
 `answer_grounding` nor `tool_call_scoping` touches authentication — both
 run inside `_stream_chat`, after `chat_endpoint` has already validated the
-token (`chat.py:1456`, unchanged). "Gates enabled" is not a meaningfully
-different question here.
+token (`chat.py:1477-1478` — `token = extract_bearer_token(authorization)` /
+`await _validate_token(validator, token)`, at `v2.1.0`; the `v2.0.0`
+equivalent is `chat.py:1438-1439` — a +39-line shift, not the same line
+number as either citation, and not `chat.py:1456`, which at `v2.1.0` is a
+line inside `extract_bearer_token`'s own body, not `chat_endpoint`).
+"Gates enabled" is not a meaningfully different question here.
 
 ---
 
@@ -257,8 +261,15 @@ Verified, with two corrections:
 2. **Refined, not confirmed as stated:** "the recency-notice fix
    (`PlannerResult.answer_pre_notice`) is live unconditionally" is true only
    in a narrow, low-consequence sense. The field
-   (`services/copilot-agent/app/planner.py:218` at `v2.1.0`) IS always set —
-   but its only reader is `app.tool_call_scoping.engaged_call_ids`
+   (`services/copilot-agent/app/planner.py:218` at `v2.1.0`) is set
+   (ungated by any flag) whenever a recency notice is actually applied —
+   `apply_recency_notice` (`extraction.py:959-967` at `v2.1.0`) computes
+   `notices = recency_notices(...)` and, if `not notices`, returns the
+   result unmodified at line 962 (`answer_pre_notice` stays its dataclass
+   default of `None`); only when a notice is actually spliced does it reach
+   line 963's `_with_answer(..., answer_pre_notice=result.answer)`. So it is
+   not "always set" — it is set precisely when there is something for it to
+   record. Either way, its only reader is `app.tool_call_scoping.engaged_call_ids`
    (via `app.extraction`'s #158 wiring), which itself only runs when
    `copilot_extraction_tool_call_scoping_enabled` is True. It is internal
    plumbing that prevents the tool-call-scoping gate from
