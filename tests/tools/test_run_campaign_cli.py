@@ -51,7 +51,14 @@ def test_cli_lists_and_approves_a_report_left_pending_by_a_separate_process(tmp_
     one DocumentationAgent instance (simulating a prior process), then use
     ONLY ``tools/run_campaign.py``'s CLI -- no bespoke script -- to list it
     and approve it."""
+    from redteam.harness.db import ExploitDB
+
     reports_dir = tmp_path / "vuln_reports"
+    db_path = tmp_path / "exploits.sqlite3"
+
+    db = ExploitDB(db_path)
+    db.add_record(CRITICAL_EXPLOIT)
+
     filer = DocumentationAgent(reports_dir=reports_dir)
     filer.file_report(CRITICAL_EXPLOIT)
     del filer  # simulate the filing process exiting
@@ -63,10 +70,20 @@ def test_cli_lists_and_approves_a_report_left_pending_by_a_separate_process(tmp_
     assert "EXP-0001" in out
 
     rc = run_campaign.main(
-        ["--approve", "EXP-0001", "--reports-dir", str(reports_dir), "--approved-by", "owner"]
+        [
+            "--approve",
+            "EXP-0001",
+            "--reports-dir",
+            str(reports_dir),
+            "--db-path",
+            str(db_path),
+            "--approved-by",
+            "owner",
+        ]
     )
     assert rc == 0
     out = capsys.readouterr().out
+    assert "--- pending report body (about to be approved) ---" in out
     assert "exploit_id=EXP-0001" in out
     assert "approved_by=owner" in out
     assert "status=filed" in out
@@ -85,7 +102,17 @@ def test_approve_unknown_exploit_id_fails_without_writing(tmp_path, capsys):
     reports_dir = tmp_path / "vuln_reports"
     reports_dir.mkdir()
 
-    rc = run_campaign.main(["--approve", "EXP-9999", "--reports-dir", str(reports_dir)])
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-9999",
+            "--reports-dir",
+            str(reports_dir),
+            "--approved-by",
+            "owner",
+            "--unverified-i-vouch-without-db-check",
+        ]
+    )
     assert rc == 1
     err = capsys.readouterr().err
     assert "no pending report" in err
@@ -124,6 +151,8 @@ def test_approve_refuses_when_pending_report_drifts_from_its_source_exploit_reco
             str(reports_dir),
             "--db-path",
             str(db_path),
+            "--approved-by",
+            "owner",
         ]
     )
     assert rc == 1
@@ -141,3 +170,213 @@ def test_never_auto_approves_no_default_exploit_id(tmp_path):
     args = run_campaign._parse_args(["--reports-dir", str(tmp_path)])
     assert args.approve is None
     assert args.list_pending is False
+
+
+# -- DO-NOT-MERGE cold review of PR #76, FIX 2 -------------------------------
+# "The cross-check fails open." Four attacks the reviewer proved, each now
+# refused (fail closed):
+#   1. --approve with no --db-path approved a hand-written pending report
+#      with NO provenance check at all.
+#   2. --db-path pointing at a missing file: ExploitDB(path) CREATES an
+#      empty sqlite, silently downgrading to a warning + approve-as-is.
+#   3. --approved-by defaulted to "owner" -- no explicit human required.
+#   4. The report body was never displayed before stamping.
+
+
+def test_approve_with_no_db_path_and_no_escape_hatch_is_refused_at_parse_time(tmp_path):
+    """Attack 1 reproduced: previously a hand-written
+    ``VULN-0099.pending-human-approval.json`` with no corresponding exploit
+    DB record at all approved cleanly (no provenance check whatsoever). Now
+    the cross-check is required by default -- omitting both --db-path and
+    the explicit escape hatch must refuse before ever touching
+    documentation.approve()."""
+    with pytest.raises(SystemExit):
+        run_campaign._parse_args(
+            ["--approve", "EXP-0099", "--reports-dir", str(tmp_path), "--approved-by", "owner"]
+        )
+
+
+def test_approve_with_missing_db_path_file_fails_closed_without_writing(tmp_path, capsys):
+    """Attack 2 reproduced: ``--db-path`` naming a file that does not yet
+    exist previously let ``ExploitDB(path)`` silently create an empty
+    sqlite DB, downgrading the cross-check to a warning and approving the
+    pending report as-is. A typo'd path is the most likely operator error
+    for the one safety flag this CLI has -- it must fail closed, not open."""
+    reports_dir = tmp_path / "vuln_reports"
+    filer = DocumentationAgent(reports_dir=reports_dir)
+    filer.file_report(CRITICAL_EXPLOIT)
+    del filer
+
+    missing_db_path = tmp_path / "typo-exploits.sqlite3"
+    assert not missing_db_path.exists()
+
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-0001",
+            "--reports-dir",
+            str(reports_dir),
+            "--db-path",
+            str(missing_db_path),
+            "--approved-by",
+            "owner",
+        ]
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "does not exist" in err
+    # The DB path must still not exist -- refusing must not create it either.
+    assert not missing_db_path.exists()
+    assert not (reports_dir / "VULN-0001.json").exists()
+
+
+def test_approve_without_approved_by_is_refused_at_parse_time(tmp_path):
+    """Attack 3 reproduced: --approved-by used to default to "owner", so no
+    explicit human identity was ever required to approve anything. It must
+    now be mandatory whenever --approve is used."""
+    with pytest.raises(SystemExit):
+        run_campaign._parse_args(
+            ["--approve", "EXP-0001", "--reports-dir", str(tmp_path), "--unverified-i-vouch-without-db-check"]
+        )
+
+
+def test_approve_prints_report_body_before_stamping(tmp_path, capsys):
+    """Attack 4 reproduced: the pending report's body was never printed
+    before approve() stamped it -- an operator approved blind. Using the
+    explicit escape hatch (a genuinely DB-less report) must still print the
+    full body before approving."""
+    reports_dir = tmp_path / "vuln_reports"
+    filer = DocumentationAgent(reports_dir=reports_dir)
+    filer.file_report(CRITICAL_EXPLOIT)
+    del filer
+
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-0001",
+            "--reports-dir",
+            str(reports_dir),
+            "--approved-by",
+            "owner",
+            "--unverified-i-vouch-without-db-check",
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "--- pending report body (about to be approved) ---" in out
+    assert '"report_id": "VULN-0001"' in out
+    assert '"clinical_impact"' in out
+
+
+def test_approve_escape_hatch_prints_loud_warning_when_used(tmp_path, capsys):
+    """The escape hatch must be loud, not a quiet downgrade -- a WARNING
+    naming exactly what was skipped."""
+    reports_dir = tmp_path / "vuln_reports"
+    filer = DocumentationAgent(reports_dir=reports_dir)
+    filer.file_report(CRITICAL_EXPLOIT)
+    del filer
+
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-0001",
+            "--reports-dir",
+            str(reports_dir),
+            "--approved-by",
+            "owner",
+            "--unverified-i-vouch-without-db-check",
+        ]
+    )
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "WARNING" in err
+    assert "without a field-for-field cross-check" in err.lower() or "without" in err.lower()
+
+
+def test_approve_with_stored_record_but_missing_from_db_fails_closed(tmp_path, capsys):
+    """A --db-path file that exists but simply has no record for this
+    exploit_id (e.g. wrong DB, or record never durably persisted) must also
+    fail closed, not silently downgrade to a warning + approve-as-is."""
+    from redteam.harness.db import ExploitDB
+
+    reports_dir = tmp_path / "vuln_reports"
+    db_path = tmp_path / "exploits.sqlite3"
+    ExploitDB(db_path)  # exists, but empty -- no EXP-0001 record in it
+
+    filer = DocumentationAgent(reports_dir=reports_dir)
+    filer.file_report(CRITICAL_EXPLOIT)
+    del filer
+
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-0001",
+            "--reports-dir",
+            str(reports_dir),
+            "--db-path",
+            str(db_path),
+            "--approved-by",
+            "owner",
+        ]
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "no exploit record" in err
+    assert not (reports_dir / "VULN-0001.json").exists()
+
+
+def test_approve_cross_check_uses_trusted_category_not_untrusted_pending_gate_field(tmp_path, capsys):
+    """Regression guard (cold review FIX 5): the rebuild must derive
+    force_human_gate from the STORED exploit record's category, not from
+    pending["requires_human_gate"] (the very field under verification), and
+    must carry fix_validation_status through so a fix_verified report
+    doesn't spuriously fail the cross-check."""
+    from redteam.harness.db import ExploitDB
+    from redteam.agents.documentation import DocumentationAgent as _DA
+
+    dos_record = {
+        "schema_version": "1.0.0",
+        "exploit_id": "EXP-0005",
+        "case_id": "dos-case",
+        "attempt_id": "att-0005",
+        "verdict_id": "ver-0005",
+        "category": "denial_of_service",
+        "source": "judge",
+        "confirmed_at": "2026-07-21T10:07:00Z",
+        "minimal_repro": {
+            "steps": ["oversized message"],
+            "expected": "rejected",
+            "observed": "accepted",
+        },
+        "recording_ref": "evals/recordings/dos-case/20260721T100600Z-draw1.json",
+    }
+
+    reports_dir = tmp_path / "vuln_reports"
+    db_path = tmp_path / "exploits.sqlite3"
+    db = ExploitDB(db_path)
+    db.add_record(dos_record)
+
+    filer = _DA(reports_dir=reports_dir)
+    filer.file_report(dos_record, force_human_gate=True)  # denial_of_service -> forced pending
+    del filer
+
+    # Simulate a legitimate post-filing lifecycle update to fix_validation_status.
+    pending_path = reports_dir / "VULN-0005.pending-human-approval.json"
+    on_disk = json.loads(pending_path.read_text(encoding="utf-8"))
+    on_disk["fix_validation_status"] = "validated"
+    pending_path.write_text(json.dumps(on_disk, indent=2), encoding="utf-8")
+
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-0005",
+            "--reports-dir",
+            str(reports_dir),
+            "--db-path",
+            str(db_path),
+            "--approved-by",
+            "owner",
+        ]
+    )
+    err = capsys.readouterr().err
+    assert rc == 0, f"legitimate fix_verified pending report must pass the cross-check, stderr={err}"

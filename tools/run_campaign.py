@@ -46,7 +46,7 @@ the in-memory (default) db restarts exploit numbering at ``EXP-0001`` on
 every invocation and will collide with (and refuse to re-file over) an
 already-persisted report for that same id.
 
-## Approving a durably-pending report (issue #63/#66)
+## Approving a durably-pending report (issue #63/#66; hardened, cold-review of PR #76)
 
 A report a PRIOR ``run`` invocation left ``pending_human_approval`` (i.e.
 you passed ``--reports-dir`` to that run) can be approved by a separate,
@@ -54,24 +54,32 @@ later invocation of this script -- no live model/target, no bespoke
 per-report script:
 
     python tools/run_campaign.py --list-pending --reports-dir PATH
-    python tools/run_campaign.py --approve EXP-0004 --reports-dir PATH [--db-path PATH] [--approved-by NAME]
+    python tools/run_campaign.py --approve EXP-0004 --reports-dir PATH --db-path PATH --approved-by NAME
 
-If ``--db-path`` names a persisted (non-``:memory:``) sqlite file that
-still holds the original exploit record, the approve path re-derives the
-report from that record via ``build_vuln_report`` and refuses (exit 1,
-nothing approved) if it does not match the persisted pending report
-field-for-field (ignoring ``filed_at``) -- the same verify-then-approve
-discipline ``tools/approve_vuln_0004.py`` established, generalized. Without
-a matching persisted db record, the cross-check is skipped (a warning is
-printed) and the persisted pending report is approved as filed on disk --
-this is strictly safer than the pre-#63 state, where there was no durable
-pending artifact to approve at all.
+``--approve`` FAILS CLOSED by default: it requires BOTH an explicit
+``--approved-by NAME`` (no default -- an explicit human identity is the
+point of a human-approval gate) and a ``--db-path`` naming an
+already-existing sqlite file that holds the original exploit record for
+that ``exploit_id``. The approve path re-derives the report from that
+record via ``build_vuln_report`` and refuses (exit 1, nothing approved) if
+it does not match the persisted pending report field-for-field (ignoring
+``filed_at``) -- the same verify-then-approve discipline
+``tools/approve_vuln_0004.py`` established, generalized. A ``--db-path``
+that doesn't already exist, or that has no record for this exploit_id, is
+a hard refusal (exit 1) -- it is never silently created or downgraded to a
+skipped check. The pending report's full body is printed before it is
+stamped, so approval is an informed act.
+
+For a genuinely DB-less pending report, pass the explicit
+``--unverified-i-vouch-without-db-check`` escape hatch instead of
+``--db-path`` -- this prints a loud WARNING and skips the cross-check; the
+operator is vouching for the report's content by hand, unverified.
 
 ## Usage
 
     python tools/run_campaign.py [--iterations N] [--reports-dir PATH] [--db-path PATH]
     python tools/run_campaign.py --list-pending --reports-dir PATH
-    python tools/run_campaign.py --approve EXPLOIT_ID --reports-dir PATH [--db-path PATH] [--approved-by NAME]
+    python tools/run_campaign.py --approve EXPLOIT_ID --reports-dir PATH --approved-by NAME (--db-path PATH | --unverified-i-vouch-without-db-check)
 
 Requires (``run`` mode only): the target stack up (``docker ps`` shows
 ``development-easy-agent-1``) and the local ollama server up with
@@ -94,6 +102,7 @@ from evals.cases.data_exfil_verification_bypass import CASE as DATA_EXFIL_CASE  
 from evals.cases.dos_input_bound import CASE as DOS_CASE  # noqa: E402
 from evals.cases.identity_authz import CASE as AUTHZ_CASE  # noqa: E402
 from redteam.agents.documentation import (  # noqa: E402
+    FORCE_HUMAN_GATE_CATEGORIES,
     DocumentationAgent,
     DocumentationAgentError,
     build_vuln_report,
@@ -137,8 +146,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--approved-by",
-        default="owner",
-        help="[approve mode] approving identity to stamp (default: %(default)s)",
+        default=None,
+        help=(
+            "[approve mode] approving identity to stamp -- REQUIRED, no default. An "
+            "explicit human identity is the point of a human-approval gate."
+        ),
+    )
+    parser.add_argument(
+        "--unverified-i-vouch-without-db-check",
+        action="store_true",
+        help=(
+            "[approve mode] escape hatch: approve WITHOUT the field-for-field "
+            "cross-check against a persisted exploit DB record (--db-path). Only for "
+            "a genuinely DB-less pending report -- passing this means the operator is "
+            "vouching for the pending report's content by hand, unverified against "
+            "anything. Loud on purpose."
+        ),
     )
     parser.add_argument(
         "--list-pending",
@@ -150,6 +173,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         parser.error("--list-pending requires --reports-dir")
     if args.approve is not None and args.reports_dir is None:
         parser.error("--approve requires --reports-dir")
+    if args.approve is not None and args.approved_by is None:
+        parser.error("--approve requires --approved-by (no default -- an explicit human identity)")
+    if args.approve is not None and args.db_path is None and not args.unverified_i_vouch_without_db_check:
+        parser.error(
+            "--approve requires --db-path PATH for the field-for-field cross-check "
+            "against the source exploit record, or --unverified-i-vouch-without-db-check "
+            "to explicitly approve without one"
+        )
     return args
 
 
@@ -170,7 +201,17 @@ def _cmd_approve(args: argparse.Namespace) -> int:
     -- see the module docstring's "Approving a durably-pending report"
     section for the verify-then-approve discipline this reuses from
     ``tools/approve_vuln_0004.py``, generalized to any exploit_id/reports_dir
-    rather than one hardcoded report."""
+    rather than one hardcoded report.
+
+    Fails CLOSED (cold-review fix, this PR): the cross-check against a
+    persisted exploit DB record is required by default -- ``_parse_args``
+    already refused to reach this function without either ``--db-path`` or
+    the explicit ``--unverified-i-vouch-without-db-check`` escape hatch. A
+    ``--db-path`` that doesn't already exist, or that exists but has no
+    record for this ``exploit_id``, is now a hard refusal (exit 1) rather
+    than a warning that silently approves as-is -- a typo'd path must not
+    be the thing that downgrades the one safety flag to a no-op.
+    """
     documentation = DocumentationAgent(reports_dir=args.reports_dir)
     pending = documentation.get_pending(args.approve)
     if pending is None:
@@ -181,31 +222,70 @@ def _cmd_approve(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if args.db_path is not None and str(args.db_path) != ":memory:":
+    if args.db_path is not None:
+        # ExploitDB(path) CREATES an empty sqlite file for any path that
+        # doesn't already exist -- checking existence first, before ever
+        # constructing it, is what makes a typo'd --db-path a hard refusal
+        # instead of a silent empty DB.
+        if not Path(args.db_path).exists():
+            print(
+                f"refusing to approve {args.approve!r}: --db-path {args.db_path} does not "
+                "exist -- will not silently create an empty exploit DB to satisfy the "
+                "cross-check. Pass the correct path, or "
+                "--unverified-i-vouch-without-db-check to explicitly approve without one.",
+                file=sys.stderr,
+            )
+            return 1
+
         db = ExploitDB(args.db_path)
         stored = db.get(args.approve)
         if stored is None:
             print(
-                f"warning: no exploit record for {args.approve!r} in {args.db_path} "
-                "-- skipping the field-for-field cross-check and approving the "
-                "persisted pending report as-is",
+                f"refusing to approve {args.approve!r}: no exploit record for it in "
+                f"{args.db_path} -- cannot perform the field-for-field cross-check. Pass "
+                "--unverified-i-vouch-without-db-check to explicitly approve without one.",
                 file=sys.stderr,
             )
-        else:
-            rebuilt = build_vuln_report(
-                stored["record"],
-                report_id=pending["report_id"],
-                filed_at=pending["filed_at"],
-                force_human_gate=pending["requires_human_gate"],
+            return 1
+
+        # force_human_gate is derived from the STORED record's category
+        # (trusted), never from pending["requires_human_gate"] -- the very
+        # field being cross-checked/verified -- and fix_validation_status is
+        # taken from the pending report itself: it is a report-lifecycle
+        # field with no bearing on the human-approval gate, legitimately set
+        # after filing (e.g. "fix_verified"), not a category-derived
+        # safety-relevant field like severity/requires_human_gate.
+        stored_category = stored["record"].get("category")
+        rebuilt = build_vuln_report(
+            stored["record"],
+            report_id=pending["report_id"],
+            filed_at=pending["filed_at"],
+            fix_validation_status=pending.get("fix_validation_status", "not_validated"),
+            force_human_gate=stored_category in FORCE_HUMAN_GATE_CATEGORIES,
+        )
+        if rebuilt != pending:
+            print(
+                f"refusing to approve {args.approve!r}: the persisted pending report "
+                "does not match what its source exploit record would produce -- "
+                f"rebuilt={rebuilt}\npending_on_disk={pending}",
+                file=sys.stderr,
             )
-            if rebuilt != pending:
-                print(
-                    f"refusing to approve {args.approve!r}: the persisted pending report "
-                    "does not match what its source exploit record would produce -- "
-                    f"rebuilt={rebuilt}\npending_on_disk={pending}",
-                    file=sys.stderr,
-                )
-                return 1
+            return 1
+    else:
+        # _parse_args already refused to reach here unless
+        # --unverified-i-vouch-without-db-check was explicitly passed.
+        print(
+            f"WARNING: approving {args.approve!r} WITHOUT a field-for-field cross-check "
+            "against a persisted exploit DB record -- --unverified-i-vouch-without-db-check "
+            "was passed, so the operator is vouching for this pending report's content by "
+            "hand, unverified.",
+            file=sys.stderr,
+        )
+
+    # Print the report body before stamping so approval is an informed act,
+    # not a blind exploit_id lookup.
+    print("--- pending report body (about to be approved) ---")
+    print(json.dumps(pending, indent=2))
 
     try:
         filed = documentation.approve(args.approve, approved_by=args.approved_by)
