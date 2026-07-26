@@ -517,7 +517,7 @@ to approve and nothing already filed.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 250 total with the sibling checkout present,
+  the repo has since grown to 343 total with the sibling checkout present,
   or 237 passed / 106 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers

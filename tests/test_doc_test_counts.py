@@ -53,6 +53,14 @@ by construction rather than by an exclusion list):
 - ``N tests with the sibling checkout`` -- checked against
   ``with_sibling_passed``.
 
+Cold-review fix (issue #68): a FOURTH phrasing -- ``N total with the
+sibling checkout present`` -- slipped past all of the above (none of them
+require the literal token ``passed``, ``tests``, or ``move it to`` that
+this shape lacks); it is the third phrasing to slip this guard, so this
+fix widens the pattern set rather than patching the one offending line,
+and this docstring was grepped for any other "N <word> with the sibling
+checkout" shape in the packet (none found beyond the three now covered).
+
 A fully self-deriving check (e.g. literally re-rendering every doc's prose)
 is infeasible -- this is the closest robust alternative: real, live
 process counts, matched against every *current-state* claim the docs make,
@@ -94,6 +102,9 @@ _MOVE_TO_WITH_SIBLING_RE = re.compile(
 )
 _TESTS_WITH_SIBLING_RE = re.compile(
     r"(\d+)\s+tests? with the sibling checkout"
+)
+_TOTAL_WITH_SIBLING_RE = re.compile(
+    r"(\d+)\s+total with the sibling checkout"
 )
 
 
@@ -149,6 +160,7 @@ _KINDS_TO_PATTERNS = (
     ("heading_suite_pair", _HEADING_SUITE_RE),
     ("with_sibling_solo", _MOVE_TO_WITH_SIBLING_RE),
     ("with_sibling_solo", _TESTS_WITH_SIBLING_RE),
+    ("with_sibling_solo", _TOTAL_WITH_SIBLING_RE),
 )
 
 
