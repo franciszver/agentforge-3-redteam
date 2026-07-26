@@ -85,5 +85,11 @@ def test_files_pending_when_gate_is_forced(tmp_path: Path):
     )
 
     assert pre_approval["status"] == "pending_human_approval"
-    # Pending reports are never persisted -- only approve() persists.
-    assert list(reports_dir.glob("*.json")) == []
+    # Issue #63: pending reports ARE now persisted (durably, with a
+    # ".pending-human-approval.json" suffix) so they survive the filing
+    # process exiting -- only the FILED (unsuffixed) artifact still requires
+    # approve() to exist.
+    written = list(reports_dir.glob("*.json"))
+    assert len(written) == 1
+    assert written[0].name.endswith(".pending-human-approval.json")
+    assert not (reports_dir / f"{pre_approval['report_id']}.json").exists()

@@ -63,7 +63,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from redteam.agents.documentation import DocumentationAgent  # noqa: E402
+from redteam.agents.documentation import DocumentationAgent, build_vuln_report  # noqa: E402
 from tools.build_vuln_report_p3_54 import _build_exploit_record  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -140,21 +140,53 @@ def main() -> int:
     assert record["exploit_id"] == _EXPLOIT_ID
 
     documentation = DocumentationAgent(reports_dir=_REPORTS_DIR)
-    pre_approval = _file_pending(
-        documentation,
-        record,
-        filed_at=original_filed_at,
-        force_human_gate=True,  # denial_of_service is already unconditionally
-        # forced (FORCE_HUMAN_GATE_CATEGORIES); explicit here for clarity.
-    )
+    # Cold-review fix (issue #63): ``DocumentationAgent`` now auto-loads
+    # persisted pending reports from ``reports_dir`` at construction time --
+    # since ``_PENDING_PATH.exists()`` was just confirmed True above, this
+    # exact report is already sitting in ``documentation``'s in-memory
+    # ``_pending`` state. Re-driving ``file_report()`` via ``_file_pending``
+    # here would collide with that already-loaded entry (the same
+    # one-exploit-one-report duplicate-rejection this module's own docstring
+    # describes) and crash instead of approving. Use what's already loaded
+    # directly when present; ``_file_pending`` stays as the fallback for a
+    # (no longer reachable in practice, but harmless to keep) construction
+    # that somehow didn't load it.
+    already_loaded = documentation.get_pending(_EXPLOIT_ID)
+    if already_loaded is None:
+        # Cold-review fix (this PR): the return value is deliberately
+        # unused -- ``_file_pending``'s only job here is its SIDE EFFECT
+        # (populating ``documentation``'s in-memory ``_pending`` so
+        # ``approve()`` below has something to pop). Below, the pending
+        # report is re-derived independently via ``build_vuln_report``
+        # directly from ``record`` and compared against what is on disk --
+        # never against this call's return value, nor against
+        # ``already_loaded`` (which, when present, is read straight back
+        # off ``_PENDING_PATH`` by ``DocumentationAgent.__init__``'s
+        # auto-load -- THE SAME FILE this script is trying to authenticate,
+        # not independent evidence; using it as the comparison target would
+        # degenerate into comparing the on-disk file against itself, which
+        # always passes regardless of tampering).
+        _file_pending(
+            documentation,
+            record,
+            filed_at=original_filed_at,
+            force_human_gate=True,  # denial_of_service is already unconditionally
+            # forced (FORCE_HUMAN_GATE_CATEGORIES); explicit here for clarity.
+        )
 
-    # Compare parsed JSON field-for-field against what is already committed
-    # on disk -- NOT a byte-for-byte comparison (key order, indentation, and
-    # trailing-newline differences are normalised away by json.loads on both
-    # sides). Still a strong guard: it fires on any FIELD-VALUE drift. Note
-    # what never enters this comparison at all, because it never enters the
-    # vuln_report in the first place (see documentation.py's "Why the
-    # vuln_report contract has no minimal_repro/recording_ref" section):
+    # Authoritative re-derivation: rebuild what the pending report SHOULD be
+    # directly from the re-derived ``record`` via ``build_vuln_report`` --
+    # NOT from ``already_loaded`` above, which (when the auto-load path is
+    # taken, i.e. in every real re-run) is itself read straight back off
+    # ``_PENDING_PATH``. Comparing THIS reconstruction against what is
+    # already committed on disk is what makes this a real cross-check: it
+    # fires on any FIELD-VALUE drift between the artifact and what the
+    # trusted exploit record actually produces, whether the drift came from
+    # tampering or corruption. Compared as parsed JSON, not byte-for-byte
+    # (key order, indentation, trailing-newline differences are normalised
+    # away). Note what never enters this comparison at all, because it never
+    # enters the vuln_report in the first place (see documentation.py's "Why
+    # the vuln_report contract has no minimal_repro/recording_ref" section):
     # the exploit record's case_id, attempt_id, verdict_id, source,
     # recording_ref, and minimal_repro.steps, plus confirmed_at (which
     # _build_exploit_record() sets to now_iso() every run, per
@@ -164,9 +196,12 @@ def main() -> int:
     # contains (schema_version, report_id, exploit_id, severity,
     # clinical_impact, observed, expected, remediation,
     # fix_validation_status, requires_human_gate, filed_at) is checked.
-    # (``_file_pending`` above already guarantees ``pre_approval["status"] ==
-    # "pending_human_approval"`` -- it raises SystemExit otherwise.)
-    reconstructed_body = {k: v for k, v in pre_approval.items() if k != "status"}
+    reconstructed_body = build_vuln_report(
+        record,
+        report_id=pending_on_disk["report_id"],
+        filed_at=original_filed_at,
+        force_human_gate=True,
+    )
     if reconstructed_body != pending_on_disk:
         print(
             "reconstructed pre-approval report does not match the committed "
@@ -177,7 +212,13 @@ def main() -> int:
         return 1
 
     filed = documentation.approve(_EXPLOIT_ID, approved_by="owner")
-    _PENDING_PATH.unlink()
+    # Cold-review fix (issue #63): ``DocumentationAgent.approve`` now removes
+    # the persisted pending file itself (it writes the filed one first, then
+    # unlinks the pending one) -- an explicit ``_PENDING_PATH.unlink()`` here
+    # would double-unlink and raise ``FileNotFoundError``. ``missing_ok=True``
+    # keeps this safe even if ``_REPORTS_DIR``/``_PENDING_PATH`` ever
+    # diverge from what ``approve()`` just removed.
+    _PENDING_PATH.unlink(missing_ok=True)
 
     print(
         f"exploit_id={_EXPLOIT_ID} report_id={filed['report_id']} "

@@ -1,9 +1,11 @@
 # Demo Script — AgentForge Phase 3 Red-Team Platform
 
-P3.20 (issue #44). A reproducible, copy-pasteable walkthrough of the
-platform end-to-end, at four beats: the loop finding a vuln, the Judge
-confirming it, the regression harness catching a **reintroduced** fixed
-exploit, and one graceful failure. Every command below was run against this
+P3.20 (issue #44); Beat 5 added in the cold-review fix to PR #76 (issue
+#63). A reproducible, copy-pasteable walkthrough of the platform
+end-to-end, at five beats: the loop finding a vuln, the Judge confirming
+it, the regression harness catching a **reintroduced** fixed exploit, one
+graceful failure, and approving a durably-pending report from the CLI.
+Every command below was run against this
 repo at `v2.0.0` while writing this doc; outputs are pasted verbatim where
 noted. See `docs/ARCHITECTURE.md` §2 for the component interaction diagram
 this script drives, and `docs/ATO_EVIDENCE_PACKET.md` §5 for the underlying
@@ -20,9 +22,9 @@ evidence table this script complements with runnable commands.
   immediately before and after any live call and confirm VRAM stays flat.
 - `pytest tests/ -q` green (deterministic — no live/network/GPU call in the
   default suite; confirmed while writing this doc). The printed count is
-  environment-dependent: **346 passed** when the sibling Phase 2 checkout
+  environment-dependent: **375 passed** when the sibling Phase 2 checkout
   (`../agentforge-2-evidence-agent`, pinned `v2.0.0`) is present locally;
-  **240 passed, 106 skipped** in CI and for anyone cloning this repo without
+  **269 passed, 106 skipped** in CI and for anyone cloning this repo without
   that sibling (the 106 skipped are `TestTraceCitationsAgainstPinnedTarget`
   (40 cases, `tests/test_dos_input_bound_resolution.py`) plus
   `TestCitationsAgainstPinnedTargets` (60 cases,
@@ -33,7 +35,7 @@ evidence table this script complements with runnable commands.
 
 ```
 $ pytest tests/ -q
-346 passed in 2.38s          # with the sibling Phase 2 checkout present
+375 passed in 2.38s          # with the sibling Phase 2 checkout present
 ```
 
 ---
@@ -299,6 +301,45 @@ here for completeness:
 
 ---
 
+## Beat 5 — Approving a durably-pending report from the CLI (issue #63/#66)
+
+Every pending report Beat 1–4's loop files (critical severity, or a
+`denial_of_service` finding — see the "one human touchpoint" note below)
+now survives the filing process exiting when `--reports-dir PATH` is
+passed to `tools/run_campaign.py`, and can be approved later by a
+completely separate invocation, no bespoke per-report script:
+
+```
+python tools/run_campaign.py --list-pending --reports-dir PATH
+python tools/run_campaign.py --approve EXP-0004 --reports-dir PATH --db-path PATH --approved-by NAME
+```
+
+`--approve` fails closed by design: `--db-path` must already name an
+existing sqlite file holding the original exploit record for that
+`exploit_id` (a typo'd or not-yet-created path is a hard refusal, exit 1 —
+it is never silently created as an empty DB), and `--approved-by` has no
+default — an explicit human identity is the point of a human-approval
+gate. The pending report's full body is printed to stdout before it is
+stamped, so approval is an informed act, not a blind exploit_id lookup.
+For a genuinely DB-less pending report, the explicit
+`--unverified-i-vouch-without-db-check` flag skips the cross-check with a
+loud stderr `WARNING` naming exactly what was skipped — there is no quiet
+way to bypass the check.
+
+```
+pytest tests/tools/test_run_campaign_cli.py -v
+```
+
+Exercises the full list → approve round trip end-to-end (file a pending
+report with one `DocumentationAgent` instance, `del` it to simulate that
+process exiting, then list and approve it with only the CLI against a
+fresh instance) plus every fail-closed path: no `--db-path`/no escape
+hatch, a `--db-path` naming a file that doesn't exist yet, no
+`--approved-by`, and a tampered/drifted pending artifact that no longer
+matches its source exploit record.
+
+---
+
 ## What this proves
 
 - **The loop finds real vulnerabilities autonomously**: `run_campaign`
@@ -328,20 +369,27 @@ here for completeness:
   `DocumentationAgent`'s critical-severity report gate (`VULN-0003`'s own
   `"requires_human_gate": true` / `"approved_by": "owner"`), never a loop
   restart.
+- **The human-approval touchpoint is durable and fails closed**: a report
+  filed pending by one process survives that process exiting
+  (`--reports-dir PATH`) and is approvable later by a completely separate
+  CLI invocation (`tools/run_campaign.py --approve`, Beat 5), with no
+  silent path to approving unverified content — a missing/typo'd
+  `--db-path`, a missing `--approved-by`, or a tampered/drifted pending
+  artifact are all hard refusals, not warnings.
 
 ## CI
 
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
 `python -m pytest tests/ -q` — on every push to `main` and on every pull
 request. CI does not check out the sibling Phase 2 target, so its printed
-count is **240 passed, 106 skipped** (the 106 skipped are
+count is **269 passed, 106 skipped** (the 106 skipped are
 `TestTraceCitationsAgainstPinnedTarget` (40, issue #25/#54),
 `TestCitationsAgainstPinnedTargets` (60, issue #58), and
 `TestStandingUpTargetPathsExistInPinnedTarget` (6, issue #61), all of
 which class-skip cleanly when `../agentforge-2-evidence-agent` is absent). Live-model and target-stack
 runs remain manual, outside CI: every command in this script was run
 locally against the dev stack while writing this doc, with the sibling
-checkout present, giving **346 passed**. `pytest tests/ -q` is still the
+checkout present, giving **375 passed**. `pytest tests/ -q` is still the
 reproducibility bar — re-run it after pulling this branch to confirm
-nothing here has drifted: expect **346 passed** if you have the sibling
-Phase 2 checkout at `v2.0.0`, or **240 passed, 106 skipped** if you don't.
+nothing here has drifted: expect **375 passed** if you have the sibling
+Phase 2 checkout at `v2.0.0`, or **269 passed, 106 skipped** if you don't.

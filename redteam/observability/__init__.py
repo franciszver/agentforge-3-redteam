@@ -26,7 +26,7 @@ from __future__ import annotations
 from .action_log import ActionLog, ActionLogError
 from .coverage import CategoryCoverage, compute_coverage, coverage_fractions
 from .cost import CostSummary, compute_cost, draw_gap_seconds
-from .findings import HIGH_SEVERITIES, open_high_sev_count, status_counts
+from .findings import HIGH_SEVERITIES, open_high_sev_count, pending_human_triage_count, status_counts
 from .runs import SuiteRunLog, SuiteRunLogError
 from .snapshot import SCHEMA_VERSION, emit_snapshot, new_snapshot_id
 from .trend import TRENDS, resilience_trend
@@ -42,6 +42,7 @@ __all__ = [
     "draw_gap_seconds",
     "HIGH_SEVERITIES",
     "open_high_sev_count",
+    "pending_human_triage_count",
     "status_counts",
     "SuiteRunLog",
     "SuiteRunLogError",
