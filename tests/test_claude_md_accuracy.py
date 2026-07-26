@@ -129,6 +129,7 @@ def test_standing_up_section_extracts_the_known_target_paths():
     assert "scripts/tailscale-serve-copilot.sh" in paths
     assert "scripts/bootstrap-copilot-dev-client.sh" in paths
     assert "evals/fixtures/seed.py" in paths
+    assert "services/copilot-agent/scripts/ingest_demo_pdf.py" in paths
 
 
 @pytest.mark.skipif(
