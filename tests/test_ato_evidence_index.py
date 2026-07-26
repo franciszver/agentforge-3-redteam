@@ -77,3 +77,47 @@ def test_every_approved_vuln_report_is_referenced_in_section_5_2():
         "criticals, or a reader following the cross-reference at :29 lands "
         "on a section that never mentions the finding they were sent to find"
     )
+
+
+# --- Part B (issue #68): exploit_id join key must not be claimed resolvable
+# against a committed artifact that does not exist ---------------------------
+#
+# redteam/agents/documentation.py's docstring described a filed report's
+# exploit_id as "the join key back to the full ExploitRecord ... in the
+# exploit DB", but no report-builder in this repo ever persists an
+# ExploitDB to disk (every one constructs DocumentationAgent(reports_dir=
+# None) and ExploitDB's own default is ":memory:") -- so EXP-0001..EXP-0004
+# resolve to nothing a reader can open. This guard is narrow: it only flags
+# "exploit_id ... join key ... exploit DB" phrasing that is NOT accompanied
+# by an explicit "in-process only" / "no persisted" qualifier nearby.
+
+_JOIN_KEY_CLAIM_RE = re.compile(
+    r"join key.{0,120}exploit DB",
+    re.IGNORECASE | re.DOTALL,
+)
+_IN_PROCESS_QUALIFIER_RE = re.compile(
+    r"in-process only|no persisted|not persisted|:memory:|reports_dir=None",
+    re.IGNORECASE,
+)
+_JOIN_KEY_WINDOW = 600
+
+
+def test_documentation_agent_docstring_does_not_claim_a_resolvable_exploit_db():
+    text = (REPO_ROOT / "redteam" / "agents" / "documentation.py").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+    violations = []
+    for match in _JOIN_KEY_CLAIM_RE.finditer(normalized):
+        start = max(0, match.start() - _JOIN_KEY_WINDOW)
+        end = min(len(normalized), match.end() + _JOIN_KEY_WINDOW)
+        window = normalized[start:end]
+        if not _IN_PROCESS_QUALIFIER_RE.search(window):
+            violations.append(normalized[match.start():match.end()])
+
+    assert not violations, (
+        "redteam/agents/documentation.py describes exploit_id as a join key "
+        "into 'the exploit DB' without qualifying that no report-builder in "
+        "this repo persists ExploitDB to disk (all use "
+        "DocumentationAgent(reports_dir=None); ExploitDB defaults to "
+        "':memory:') -- this claims a resolvable artifact that does not "
+        f"exist:\n{violations}"
+    )

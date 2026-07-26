@@ -415,7 +415,7 @@ deterministic — fake model/target clients except the sibling-checkout
 citation-verification class noted in §4.2, no live network or GPU call in
 any case (§4.2).
 
-### 5.2 The three owner-approved critical vuln reports
+### 5.2 The three owner-approved critical vuln reports, plus VULN-0004
 
 All three are reproducible from `evals/recordings/` and filed as structured,
 schema-valid JSON under `docs/vuln_reports/`:
@@ -428,15 +428,39 @@ schema-valid JSON under `docs/vuln_reports/`:
 
 All three carry `"approved_by": "owner"`, `"approved_at":
 "2026-07-22T06:01:56Z"`, `"requires_human_gate": true` — verified by
-reading each file directly (§2.1 above quotes the exact fields). A fourth
-recorded set exists for a non-critical, DoS-adjacent probe
-(`evals/recordings/dos-overlong-query-max-query-chars/`, 1 draw) — this is
-the bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-013
-(false positive, resolved narrowly by white-box trace, issue #25; TRI-010
+reading each file directly (§2.1 above quotes the exact fields).
+
+**VULN-0004 (Medium, the fourth owner-approved finding — not one of the
+three criticals above).** `docs/vuln_reports/VULN-0004.json`: `exploit_id:
+EXP-0004`, severity `medium`, `label: "accepted_no_bound_observed"`,
+filed from issue #54's white-box trace of the conversation store's
+unbounded growth (`docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`,
+`docs/TRIAGE_LAB.md` TRI-014, referenced from this packet's own framing
+above at the top of this document). Its own, dedicated live evidence is
+`evals/recordings/dos-unbounded-chat-message-length/` — **1 draw**
+(`draw1` only; stated honestly as a single draw, not the 3-draw sample
+size the three criticals above carry). It carries `"approved_by":
+"owner"`, `"approved_at": "2026-07-25T23:54:59Z"`,
+`"requires_human_gate": true` — the gate fired here because
+`denial_of_service` is force-routed through human approval regardless of
+severity (`redteam/agents/documentation.py`'s `FORCE_HUMAN_GATE_CATEGORIES`),
+not because the finding is critical severity.
+
+**Do not conflate VULN-0004's recording with the dismissed DoS probe
+below.** A separate, unrelated recorded set exists for a *different*,
+non-critical, DoS-adjacent probe that was dismissed as a false positive:
+`evals/recordings/dos-overlong-query-max-query-chars/` — **1 draw** — the
+bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-013 (false
+positive, resolved narrowly by white-box trace, issue #25; TRI-010
 dismissed these same query-size guards on inspection alone, without a
 trace — TRI-013 is the traced probe of that same `MAX_QUERY_CHARS`
-guard), not a fourth critical, and is not conflated with the three
-above.
+guard). This recording is **not** VULN-0004's evidence and is not counted
+among any owner-approved finding — it never produced a filed
+`docs/vuln_reports/` report.
+
+Together, `evals/recordings/` holds **five** directories total (verified
+by directory listing): the three criticals' recordings above, VULN-0004's
+own recording, and this one dismissed-candidate recording.
 
 **Re-verifying without corrupting the approval record (issue #64).**
 `tools/build_vuln_reports.py` is the script that produced VULN-0001–0003
@@ -620,7 +644,7 @@ describes — not because it was dramatic.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
   `docs/STAGE1_TARGET.md`, `docs/LOAD_TEST.md`, `docs/TRIAGE_LAB.md`,
-  `docs/vuln_reports/VULN-000{1,2,3}.json`, `contracts/README.md`,
+  `docs/vuln_reports/VULN-000{1,2,3,4}.json`, `contracts/README.md`,
   `contracts/v1/*.schema.json`, `requirements-contracts.txt`,
   `redteam/agents/red_team.py`, `redteam/campaign.py`, `.gitignore`,
   `evals/recordings/*`, and PR #35 / PR #40 (`gh pr view`, quoted verbatim).
