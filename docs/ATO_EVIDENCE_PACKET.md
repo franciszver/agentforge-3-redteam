@@ -60,18 +60,18 @@ flowchart TB
         Op["Human operator<br/>(campaign start, category budget)"]
     end
 
-    subgraph ZoneA["Zone A -- Adversarial (Red Team process/context)"]
-        RT["Red Team Agent<br/>local model: huihui_ai/qwen2.5-abliterate:7b<br/>(CPU-only, num_gpu=0)"]
+    subgraph ZoneA["Zone A -- Adversarial (isolated module boundary)"]
+        RT["Red Team Agent<br/>local model: huihui_ai/qwen2.5-abliterate:7b<br/>(CPU-only, num_gpu=0); the only model-backed role"]
     end
 
     subgraph TargetBoundary["Target's own PHI boundary (synthetic fixtures only, this engagement)"]
         T["Phase 2 Clinical Co-Pilot<br/>agentforge-2-evidence-agent v2.0.0<br/>(seeded synthetic patients, docs/STAGE1_TARGET.md)"]
     end
 
-    subgraph ZoneB["Zone B -- Evaluative (separate isolated processes/contexts)"]
-        J["Judge Agent<br/>local instruct model"]
-        O["Orchestrator Agent<br/>local instruct model"]
-        D["Documentation Agent<br/>local instruct model"]
+    subgraph ZoneB["Zone B -- Evaluative (separate modules, single process)"]
+        J["Judge Agent<br/>rule-based detect(); model-optional, unused by default"]
+        O["Orchestrator Agent<br/>deterministic rule/threshold logic; no model call"]
+        D["Documentation Agent<br/>deterministic template; model-optional, unused by default"]
     end
 
     subgraph Store["Local, on-disk state (no network egress)"]
@@ -110,10 +110,13 @@ flowchart TB
 **Reading the boundary.** Three separate things are colored above and must
 not be conflated:
 
-1. **Trust-zone boundary** (Zone A vs. Zone B): enforced by process/context
-   isolation, per `docs/ARCHITECTURE.md` §2's load-bearing property — this
-   is the Judge-vs-Red-Team independence guarantee, not a data-egress
-   control.
+1. **Trust-zone boundary** (Zone A vs. Zone B): enforced today at the
+   module and data level — no shared import path, typed inputs only — per
+   `docs/ARCHITECTURE.md` §1/§2's load-bearing property; this is the
+   Judge-vs-Red-Team independence guarantee, not a data-egress control.
+   OS-process isolation between the zones is a stated design goal, not yet
+   implemented (`docs/ARCHITECTURE.md` §1) — all four components currently
+   run in one Python process.
 2. **Target's PHI boundary**: this engagement's own data is synthetic —
    three seeded fixture patients (`docs/STAGE1_TARGET.md` §4: Phil Belford,
    Susan Underwood, Wanda Moore), not real PHI, per `docs/THREAT_MODEL.md`
@@ -124,11 +127,12 @@ not be conflated:
    pulled *out* of the target into the red-team platform's own storage
    (`evals/recordings/`, the exploit DB, or the filed vuln reports) beyond
    what the target's own `/chat` response already contained.
-3. **Network egress boundary**: zero. Every one of the four AI roles runs
-   locally (`docs/ARCHITECTURE.md` §4 — no role calls a hosted API); the
-   platform's own dependency footprint (§3 below) has no HTTP client aimed
-   at anything but `localhost` (ollama at `:11434`, the target container via
-   `docker exec`, per `docs/STAGE1_TARGET.md` §5).
+3. **Network egress boundary**: zero. Of the four roles, only the Red Team
+   Agent calls a model, and that call is local (`docs/ARCHITECTURE.md` §4 —
+   no role calls a hosted API); the platform's own dependency footprint (§3
+   below) has no HTTP client aimed at anything but `localhost` (ollama at
+   `:11434`, the target container via `docker exec`, per
+   `docs/STAGE1_TARGET.md` §5).
 
 ---
 
@@ -259,13 +263,16 @@ directory listing: `contracts/v1/` is the only version directory present.
 
 ### 3.3 Local model runtimes
 
-All four AI roles run locally, per `docs/ARCHITECTURE.md` §4 (the owner's
-locked, no-cloud decision for every role) and confirmed at the code level:
+Only the Red Team Agent calls a model in the shipped default path, and that
+model runs locally, per `docs/ARCHITECTURE.md` §4 (the owner's locked,
+no-cloud decision for every role that calls one) and confirmed at the code
+level. The other three roles are deterministic and call no model at all
+(see the table below):
 
 | Role | Runtime | Model | Verified where |
 |---|---|---|---|
 | Red Team Agent generator | ollama, `http://localhost:11434`, **CPU-only** (`num_gpu: 0`, hardcoded default) | `huihui_ai/qwen2.5-abliterate:7b` | `redteam/agents/red_team.py` `DEFAULT_MODEL` constant + module docstring: validated to comply with offensive-security generation, ~7s/call, CPU-only |
-| Judge / Orchestrator / Documentation Agents | separate local instruct-model instances, separate processes/contexts | stock instruct models (no uncensored requirement — none of the three is a generation-under-refusal-pressure task) | `docs/ARCHITECTURE.md` §4 |
+| Judge / Orchestrator / Documentation Agents | none -- deterministic Python, no model instance, no model call, in the same process as every other role | N/A in the shipped default path; each exposes an optional model-backed seam (`scorer`/`ranker`/`narrator`) that a stock instruct model could later fill (no uncensored requirement -- none of the three is a generation-under-refusal-pressure task) | `docs/ARCHITECTURE.md` §4 |
 | Target's answer model | GPU-resident, target's own container | 8B-Q5 quantized model | `docs/STAGE1_TARGET.md` §1/§6, `nvidia-smi` confirms ~7.8/12 GB VRAM resident |
 | Target's document-ingestion VLM | ollama-only, GPU when loaded | `qwen2.5vl:7b` | `planning/PHASE3_KICKOFF_PROMPT.md` (cited by `docs/ARCHITECTURE.md`) |
 
@@ -319,9 +326,9 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **339 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **340 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **233 passed, 106 skipped** in CI
+present locally (confirmed at PR time); **234 passed, 106 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
 not check it out, so the 100 total sibling-checkout citation cases
 class-skip cleanly there: 40 `TestTraceCitationsAgainstPinnedTarget` cases
@@ -366,7 +373,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **339 passing tests (233 passed, 106 skipped in CI), no live/network/GPU
+- **340 passing tests (234 passed, 106 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -389,7 +396,7 @@ those changes included, not a pre-change baseline.
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
   changes plus its expanded citation-verification test set move it to 339
-  with the sibling checkout present, or 233 passed / 106 skipped without
+  with the sibling checkout present, or 234 passed / 106 skipped without
   it, §5.1).
 
 ---
@@ -398,8 +405,8 @@ those changes included, not a pre-change baseline.
 
 ### 5.1 The 339-test suite (232 in CI)
 
-`pytest tests/ -q` → **339 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **233 passed, 106 skipped**
+`pytest tests/ -q` → **340 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **234 passed, 106 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -487,7 +494,7 @@ to approve and nothing already filed.
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
   the repo has since grown to 250 total with the sibling checkout present,
-  or 233 passed / 106 skipped without it, §5.1).
+  or 234 passed / 106 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -608,7 +615,7 @@ describes — not because it was dramatic.
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
   evidence), §5 Eval-result evidence (339 tests with the sibling checkout
-  present / 233 passed, 106 skipped in CI, 3 criticals, live-campaign
+  present / 234 passed, 106 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,

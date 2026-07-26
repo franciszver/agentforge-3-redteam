@@ -114,7 +114,8 @@ _PROCESS_ISOLATION_CLAIM_RE = re.compile(
 
 _GOAL_QUALIFIER_RE = re.compile(
     r"design goal|not yet implemented|not currently implemented"
-    r"|future work|aspirational|remains? (a )?goal",
+    r"|future work|aspirational|remains? (a )?goal|longer[- ]term goal"
+    r"|not\s.{0,40}isolation (today|yet)|eventually",
     re.IGNORECASE,
 )
 

@@ -20,9 +20,9 @@ evidence table this script complements with runnable commands.
   immediately before and after any live call and confirm VRAM stays flat.
 - `pytest tests/ -q` green (deterministic — no live/network/GPU call in the
   default suite; confirmed while writing this doc). The printed count is
-  environment-dependent: **339 passed** when the sibling Phase 2 checkout
+  environment-dependent: **340 passed** when the sibling Phase 2 checkout
   (`../agentforge-2-evidence-agent`, pinned `v2.0.0`) is present locally;
-  **233 passed, 106 skipped** in CI and for anyone cloning this repo without
+  **234 passed, 106 skipped** in CI and for anyone cloning this repo without
   that sibling (the 106 skipped are `TestTraceCitationsAgainstPinnedTarget`
   (40 cases, `tests/test_dos_input_bound_resolution.py`) plus
   `TestCitationsAgainstPinnedTargets` (60 cases,
@@ -33,7 +33,7 @@ evidence table this script complements with runnable commands.
 
 ```
 $ pytest tests/ -q
-339 passed in 2.38s          # with the sibling Phase 2 checkout present
+340 passed in 2.38s          # with the sibling Phase 2 checkout present
 ```
 
 ---
@@ -140,10 +140,11 @@ the full 3-report table).
 `redteam/agents/judge.py` (`JudgeAgent.score`) scores a target response
 against the `AttackCase` that produced it into a contract-valid
 `judge_verdict` (`contracts/v1/judge_verdict.schema.json`), independent of
-the Red Team Agent by construction: the module imports nothing from
-`redteam.agents`/`redteam.harness` and holds no Red Team state — the
-"conflict of interest by design" separation (`docs/ARCHITECTURE.md` §3(2)/
-§6). Verified directly:
+the Red Team Agent at the module and data level: the module imports nothing
+from `redteam.agents`/`redteam.harness`/`redteam.observability` and holds no
+Red Team state — the "conflict of interest by design" separation
+(`docs/ARCHITECTURE.md` §3(2)/§6). This is a module/import boundary, not an
+OS-process boundary — see `docs/ARCHITECTURE.md` §1. Verified directly:
 
 ```
 pytest tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals -v
@@ -333,14 +334,14 @@ here for completeness:
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
 `python -m pytest tests/ -q` — on every push to `main` and on every pull
 request. CI does not check out the sibling Phase 2 target, so its printed
-count is **233 passed, 106 skipped** (the 106 skipped are
+count is **234 passed, 106 skipped** (the 106 skipped are
 `TestTraceCitationsAgainstPinnedTarget` (40, issue #25/#54),
 `TestCitationsAgainstPinnedTargets` (60, issue #58), and
 `TestStandingUpTargetPathsExistInPinnedTarget` (6, issue #61), all of
 which class-skip cleanly when `../agentforge-2-evidence-agent` is absent). Live-model and target-stack
 runs remain manual, outside CI: every command in this script was run
 locally against the dev stack while writing this doc, with the sibling
-checkout present, giving **339 passed**. `pytest tests/ -q` is still the
+checkout present, giving **340 passed**. `pytest tests/ -q` is still the
 reproducibility bar — re-run it after pulling this branch to confirm
-nothing here has drifted: expect **339 passed** if you have the sibling
-Phase 2 checkout at `v2.0.0`, or **233 passed, 106 skipped** if you don't.
+nothing here has drifted: expect **340 passed** if you have the sibling
+Phase 2 checkout at `v2.0.0`, or **234 passed, 106 skipped** if you don't.
