@@ -227,14 +227,93 @@ def test_reports_persisted_to_reports_dir(tmp_path):
     assert on_disk["report_id"] == "VULN-0002"
 
 
-def test_pending_critical_report_not_persisted_until_approved(tmp_path):
+def test_pending_report_persisted_with_suffix_until_approved(tmp_path):
+    """Issue #63: a pending report now gets a durable surface of its own --
+    ``<report_id>.pending-human-approval.json`` -- rather than living only
+    in memory (the prior behavior this test used to pin)."""
     agent = DocumentationAgent(reports_dir=tmp_path)
     agent.file_report(CRITICAL_EXPLOIT)
-    assert list(tmp_path.glob("*.json")) == []
+
+    pending_files = list(tmp_path.glob("*.pending-human-approval.json"))
+    assert len(pending_files) == 1
+    assert pending_files[0].name == "VULN-0001.pending-human-approval.json"
+    on_disk = json.loads(pending_files[0].read_text(encoding="utf-8"))
+    assert on_disk["exploit_id"] == "EXP-0001"
+    assert on_disk["requires_human_gate"] is True
+    assert "approved_by" not in on_disk
+    # Not yet filed -- no VULN-0001.json (only the pending-suffixed file).
+    assert not (tmp_path / "VULN-0001.json").exists()
 
     agent.approve("EXP-0001")
-    written = list(tmp_path.glob("*.json"))
+
+    # The pending artifact is gone; a filed one takes its place.
+    assert list(tmp_path.glob("*.pending-human-approval.json")) == []
+    written = [p for p in tmp_path.glob("*.json") if not p.name.endswith(".pending-human-approval.json")]
     assert len(written) == 1
+    assert written[0].name == "VULN-0001.json"
+
+
+def test_pending_report_persisted_by_one_agent_is_approvable_by_a_fresh_instance(tmp_path):
+    """The heart of issue #63/#66: a report left pending by one process must
+    be approvable by a SEPARATE later process/instance pointed at the same
+    ``reports_dir`` -- no bespoke reconstruction script (contrast
+    ``tools/approve_vuln_0004.py``, which had to reconstruct the exploit
+    record from scratch because ``_pending`` was in-memory only)."""
+    filer = DocumentationAgent(reports_dir=tmp_path)
+    filer.file_report(CRITICAL_EXPLOIT)
+    del filer  # simulate the filing process having exited
+
+    approver = DocumentationAgent(reports_dir=tmp_path)  # a fresh instance/"process"
+    assert approver.get_pending("EXP-0001") is not None
+    assert approver.get_filed("EXP-0001") is None
+
+    filed = approver.approve("EXP-0001", approved_by="owner")
+
+    assert filed["status"] == "filed"
+    assert filed["exploit_id"] == "EXP-0001"
+    assert filed["approved_by"] == "owner"
+    assert approver.get_pending("EXP-0001") is None
+    assert approver.get_filed("EXP-0001") is not None
+
+    on_disk = json.loads((tmp_path / "VULN-0001.json").read_text(encoding="utf-8"))
+    assert on_disk["approved_by"] == "owner"
+    assert on_disk["observed"] == CRITICAL_EXPLOIT["minimal_repro"]["observed"]
+
+
+def test_stale_pending_file_dropped_once_filed_exists(tmp_path):
+    """Defensive recovery: if a pending-suffixed file is somehow still on
+    disk for an exploit_id that ALSO has a filed report (e.g. the pending
+    file's ``unlink`` failed right after the filed file was written during
+    ``approve``), loading must never re-offer that exploit_id for approval
+    -- the filed report wins, the stale pending duplicate is dropped."""
+    agent = DocumentationAgent(reports_dir=tmp_path)
+    agent.file_report(CRITICAL_EXPLOIT)
+    agent.approve("EXP-0001")
+    del agent
+
+    # Recreate a stale pending artifact next to the already-filed one.
+    stale_pending = {**json.loads((tmp_path / "VULN-0001.json").read_text(encoding="utf-8"))}
+    stale_pending.pop("approved_at")
+    stale_pending.pop("approved_by")
+    (tmp_path / "VULN-0001.pending-human-approval.json").write_text(
+        json.dumps(stale_pending, indent=2), encoding="utf-8"
+    )
+
+    reloaded = DocumentationAgent(reports_dir=tmp_path)
+    assert reloaded.get_pending("EXP-0001") is None  # not re-offered
+    assert reloaded.get_filed("EXP-0001") is not None
+    with pytest.raises(DocumentationAgentError):
+        reloaded.approve("EXP-0001")
+
+
+def test_corrupt_persisted_report_raises_loudly_not_silently_ignored(tmp_path):
+    """A reports_dir this module can't parse must fail loudly at load time,
+    not silently lose the pending report it's supposed to make durable."""
+    (tmp_path / "VULN-0009.pending-human-approval.json").write_text(
+        "not json", encoding="utf-8"
+    )
+    with pytest.raises(DocumentationAgentError):
+        DocumentationAgent(reports_dir=tmp_path)
 
 
 def test_malformed_exploit_record_raises_documentation_agent_error_not_key_error():

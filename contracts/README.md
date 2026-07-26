@@ -28,6 +28,13 @@ ad hoc payload shape once this contract exists for their edge.
 No `v2/` exists yet; nothing has broken compatibility since this issue's
 initial cut.
 
+**Log:**
+
+- Issue #63: `observability_snapshot.schema.json` gained an optional
+  `pending_human_triage_count` property (durable count of reports still
+  awaiting human triage). Not added to `required`, so pre-#63 producers and
+  consumers stay valid — additive, stays `v1`.
+
 ## Schemas (one per edge in ARCHITECTURE.md §2)
 
 | Schema | Edge | Notes |

@@ -3,7 +3,9 @@
 
 Produces exactly the contract-shaped dict -- ``schema_version``,
 ``snapshot_id``, ``generated_at``, ``coverage_by_category`` (fractions),
-``open_high_sev_count``, ``cost``, ``action_log_ref`` -- consumed
+``open_high_sev_count``, ``pending_human_triage_count`` (issue #63, additive
+v1 field -- ``redteam.observability.findings.pending_human_triage_count``),
+``cost``, ``action_log_ref`` -- consumed
 programmatically by the Orchestrator (P3.8) to decide what the Red Team
 attacks next and when to throttle draws, not rendered only for a human.
 The contract is deliberately narrow (``additionalProperties: false``), so
@@ -29,7 +31,7 @@ from redteam.harness.replay import RECORDINGS_DIR
 from .action_log import ActionLog
 from .coverage import compute_coverage, coverage_fractions
 from .cost import compute_cost
-from .findings import open_high_sev_count
+from .findings import open_high_sev_count, pending_human_triage_count
 
 SCHEMA_VERSION = "1.0.0"
 
@@ -69,6 +71,7 @@ def emit_snapshot(
         "generated_at": generated_at or now_iso(),
         "coverage_by_category": coverage_fractions(coverage),
         "open_high_sev_count": open_high_sev_count(db, vuln_reports),
+        "pending_human_triage_count": pending_human_triage_count(vuln_reports),
         "cost": cost.as_contract_cost(),
         "action_log_ref": str(action_log_ref),
     }

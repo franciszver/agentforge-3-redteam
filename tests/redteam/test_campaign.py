@@ -11,6 +11,7 @@ deterministic (docs/ARCHITECTURE.md §2's loop, wired end-to-end).
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 
 import pytest
@@ -591,3 +592,42 @@ def test_max_iterations_must_be_positive(tmp_path):
             recordings_dir=recordings_dir,
             snapshot_fn=lambda: _full_coverage_snapshot("denial_of_service"),
         )
+
+
+def test_post_loop_action_log_export_includes_last_iterations_own_events(tmp_path):
+    """Issue #63: ``ActionLog.export_jsonl`` was only called from
+    ``emit_snapshot``, itself only called at the TOP of each iteration -- so
+    a single-iteration run's own events (``directive_issued``,
+    ``attempt_generated``, ``exploit_recorded``, ``vuln_report_filed``, ...),
+    all appended AFTER that one top-of-loop snapshot call, never reached the
+    exported jsonl at all for ``--iterations 1``. A post-loop export must
+    flush them before ``run_campaign`` returns."""
+    recordings_dir = tmp_path / "recordings"
+    db, action_log, documentation, judge, red_team, orchestrator = _new_agents(recordings_dir)
+    action_log_ref = tmp_path / "action_log.jsonl"
+
+    run_campaign(
+        orchestrator=orchestrator,
+        red_team=red_team,
+        judge=judge,
+        documentation=documentation,
+        db=db,
+        action_log=action_log,
+        action_log_ref=action_log_ref,
+        cases=[_NORMAL_NON_FP_CASE, AUTHZ_CASE],
+        target_client=lambda attempt: _vulnerable_response(),
+        max_iterations=1,
+        recordings_dir=recordings_dir,
+        # An injected snapshot_fn (as every test above uses) never calls
+        # emit_snapshot/export_jsonl itself -- so today, NOTHING exports
+        # action_log_ref at all for this run. That is the bug.
+        snapshot_fn=lambda: _full_coverage_snapshot("tool_misuse"),
+    )
+
+    assert action_log_ref.exists(), "run_campaign never exported the action log at all"
+    exported_lines = action_log_ref.read_text(encoding="utf-8").splitlines()
+    all_events = action_log.query()
+    assert len(exported_lines) == len(all_events)
+    exported_event_types = {json.loads(line)["event_type"] for line in exported_lines}
+    assert "exploit_recorded" in exported_event_types
+    assert "vuln_report_filed" in exported_event_types

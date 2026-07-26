@@ -46,3 +46,26 @@ def open_high_sev_count(db: ExploitDB, vuln_reports: Sequence[Mapping[str, Any]]
         if exploit is not None and exploit["status"] == "open":
             count += 1
     return count
+
+
+def pending_human_triage_count(vuln_reports: Sequence[Mapping[str, Any]] = ()) -> int:
+    """How many of ``vuln_reports`` are still awaiting human triage (issue
+    #63) -- the durable observability-snapshot answer to "is anything
+    sitting in the human-approval gate right now?"
+
+    A report counts as pending here if it required the human gate
+    (``requires_human_gate: True``) AND has not yet been approved
+    (``approved_by`` absent) -- this is deliberately independent of any
+    non-contract "status" key a caller happens to have attached (e.g.
+    ``redteam.campaign.run_campaign``'s ``{**report, "status": ...}``): it
+    works identically for reports sourced from
+    ``DocumentationAgent.all_pending()``/``get_pending()`` (which never
+    carry a "status" key at all) and from a campaign run's
+    ``all_vuln_reports`` list alike. ``()`` -- no reports known -- yields 0,
+    the same honest-default convention ``open_high_sev_count`` uses.
+    """
+    return sum(
+        1
+        for report in vuln_reports
+        if report.get("requires_human_gate") and not report.get("approved_by")
+    )

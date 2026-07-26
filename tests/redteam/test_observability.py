@@ -26,6 +26,7 @@ from redteam.observability import (
     compute_cost,
     emit_snapshot,
     open_high_sev_count,
+    pending_human_triage_count,
     resilience_trend,
     status_counts,
 )
@@ -146,6 +147,30 @@ def test_open_high_sev_count_needs_a_matching_vuln_report():
 
     db.set_status("EXP-0001", "fixed")
     assert open_high_sev_count(db, [report]) == 0  # resolved, no longer "open"
+
+
+def test_pending_human_triage_count_needs_the_gate_and_no_approval():
+    """Issue #63: a durable count of reports still awaiting human triage --
+    independent of any non-contract 'status' key, so it works the same
+    whether ``vuln_reports`` came from ``DocumentationAgent.all_pending()``
+    (no 'status' key at all) or from ``run_campaign``'s
+    ``all_vuln_reports`` (which does carry one)."""
+    assert pending_human_triage_count([]) == 0  # honest zero
+
+    pending = {"exploit_id": "EXP-0001", "requires_human_gate": True}
+    assert pending_human_triage_count([pending]) == 1
+
+    not_gated = {"exploit_id": "EXP-0002", "requires_human_gate": False}
+    assert pending_human_triage_count([not_gated]) == 0
+
+    already_approved = {
+        "exploit_id": "EXP-0003",
+        "requires_human_gate": True,
+        "approved_by": "owner",
+    }
+    assert pending_human_triage_count([already_approved]) == 0
+
+    assert pending_human_triage_count([pending, not_gated, already_approved]) == 1
 
 
 # -- resilience trend -----------------------------------------------------------
@@ -305,6 +330,31 @@ def test_emit_snapshot_open_high_sev_wired_through(tmp_path):
         vuln_reports=[report],
     )
     assert snapshot["open_high_sev_count"] == 1
+
+
+def test_emit_snapshot_pending_human_triage_count_wired_through(tmp_path):
+    """Issue #63: the snapshot the Orchestrator (and any durable-observability
+    reader) sees carries a live pending-triage count, not just open-high-sev."""
+    db = ExploitDB(":memory:")
+    log = ActionLog(":memory:")
+    ref = tmp_path / "action_log.jsonl"
+    pending_report = {"exploit_id": "EXP-0001", "severity": "critical", "requires_human_gate": True}
+    approved_report = {
+        "exploit_id": "EXP-0002",
+        "severity": "critical",
+        "requires_human_gate": True,
+        "approved_by": "owner",
+    }
+
+    snapshot = emit_snapshot(
+        db,
+        ALL_CASES,
+        log,
+        str(ref),
+        recordings_dir=RECORDINGS_DIR,
+        vuln_reports=[pending_report, approved_report],
+    )
+    assert snapshot["pending_human_triage_count"] == 1
 
 
 def test_emit_snapshot_is_deterministic_given_explicit_ids(tmp_path):
