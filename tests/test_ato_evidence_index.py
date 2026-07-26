@@ -235,6 +235,53 @@ def test_documentation_agent_docstring_does_not_claim_unqualified_repro_steps():
     )
 
 
+# --- Part D (cold-review of PR #78, issue #77 follow-up) -------------------
+#
+# Part C's guard above only covers redteam/agents/documentation.py's own
+# module docstring. docs/ARCHITECTURE.md independently made the SAME now-
+# false claim in three places: ":318" ("the report itself carries no
+# minimal_repro/recording_ref field (the schema forbids it)"), ":77" and
+# ":187" ("deliberately has no recording_ref field" / "reproducible ...
+# via the report plus §5.2's mapping"). Nothing caught this because Part C
+# only greps documentation.py -- extend the same "must not claim a report
+# cannot name its own evidence" guard to every tracked Markdown doc, not
+# just one Python module, so a doc drifting out of sync with the code (as
+# ARCHITECTURE.md did here) is caught the same way.
+
+_NO_RECORDING_REF_CLAIM_RE = re.compile(
+    r"(?:deliberately )?has no.{0,10}`?recording_ref`?|"
+    r"carries no.{0,40}`?recording_ref`?|"
+    r"no `?recording_ref`? field",
+    re.IGNORECASE | re.DOTALL,
+)
+_DOC_PATHS_TO_GUARD = (
+    REPO_ROOT / "docs" / "ARCHITECTURE.md",
+    REPO_ROOT / "redteam" / "agents" / "documentation.py",
+)
+
+
+def test_no_tracked_doc_claims_a_report_cannot_name_its_own_evidence():
+    """Ground-truth-backed doc guard: since issue #77/P3.36, every filed
+    report DOES carry a recording_ref (see
+    test_filed_reports_name_their_own_recording below) -- so no tracked doc
+    may claim a report "has no recording_ref field" / "carries no ...
+    recording_ref field". Scoped to the phrasing this PR found stale
+    (ARCHITECTURE.md's ":318"/":77"/":187"), not a blanket ban on the
+    substring "recording_ref" (which legitimately appears constantly)."""
+    violations: list[str] = []
+    for doc_path in _DOC_PATHS_TO_GUARD:
+        text = doc_path.read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        for match in _NO_RECORDING_REF_CLAIM_RE.finditer(normalized):
+            violations.append(f"{doc_path.relative_to(REPO_ROOT)}: {match.group(0)!r}")
+
+    assert not violations, (
+        "the following tracked docs still claim a vuln report cannot name "
+        "its own recording_ref, which has been false since issue #77/P3.36 "
+        f"added the field:\n{violations}"
+    )
+
+
 def test_filed_reports_name_their_own_recording():
     """Ground-truth check for issue #77/P3.36: every committed, filed
     report now DOES contain a recording pointer (recording_ref), so the
