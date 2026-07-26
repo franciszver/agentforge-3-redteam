@@ -21,11 +21,16 @@ STAGE1_TARGET.md stale. A window (rather than whole-file) match keeps this
 targeted: a file can legitimately discuss unrelated deferred work (e.g.
 TRIAGE_LAB's relevance-gate ADR) as long as it isn't textually tangled up
 with an "issue #3" mention.
+
+RED (P3.30, issue #61): the two mutation tests at the bottom of this file
+demonstrate that the guard above does NOT catch the class it claims to --
+run against this version of the file, both fail.
 """
 
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -45,8 +50,6 @@ def _tracked_markdown_files() -> list[Path]:
     """Every ``*.md`` file `git` tracks -- gitignored paths (e.g. ``prd/``)
     never appear in ``git ls-files`` output, so no separate exclusion is
     needed here."""
-    import subprocess
-
     out = subprocess.run(
         ["git", "ls-files", "*.md"],
         cwd=REPO_ROOT,
@@ -103,3 +106,47 @@ def test_no_committed_doc_frames_deployed_url_gate_as_pending():
         "gate as explicitly deferred/pending, but it was satisfied via a "
         f"private tailnet exposure: {violations}"
     )
+
+
+# --- RED (issue #61): mutation tests proving the guard above under-catches ---
+
+
+def test_guard_catches_capitalized_issue3_still_deferred_mutation():
+    """Reviewer mutation #1: a capitalized 'Issue #3 ... deferred and
+    pending' sentence. Pre-fix, ``_ISSUE3_RE`` is case-sensitive and
+    requires the literal lowercase 'issue #3', so this is missed."""
+    mutation = "Issue #3 (Tailscale exposure) is still deferred and pending owner action."
+    normalized = " ".join(mutation.split())
+    violations = []
+    for match in _ISSUE3_RE.finditer(normalized):
+        start = max(0, match.start() - _WINDOW)
+        end = min(len(normalized), match.end() + _WINDOW)
+        window = normalized[start:end]
+        if _STALE_STATUS_RE.search(window):
+            violations.append(window)
+    assert violations, f"guard failed to catch: {mutation!r}"
+
+
+def test_guard_catches_tailscale_p32_deferred_mutation():
+    """Reviewer mutation #2: names the gate via 'Tailscale live exposure'
+    and 'P3.2' without the literal 'issue #3' token. Pre-fix, neither test's
+    pattern covers this phrasing at all."""
+    mutation = (
+        "Note: the Tailscale live exposure (P3.2) remains deferred; the "
+        "target is only ever driven at localhost."
+    )
+    normalized = " ".join(mutation.split())
+    violations = []
+    for match in _ISSUE3_RE.finditer(normalized):
+        start = max(0, match.start() - _WINDOW)
+        end = min(len(normalized), match.end() + _WINDOW)
+        window = normalized[start:end]
+        if _STALE_STATUS_RE.search(window):
+            violations.append(window)
+    if not re.search(
+        r"deployed-url hard gate\)? is explicitly (deferred|pending)",
+        normalized,
+        re.IGNORECASE,
+    ):
+        pass  # second test's narrow pattern also doesn't match this phrasing
+    assert violations, f"guard failed to catch: {mutation!r}"
