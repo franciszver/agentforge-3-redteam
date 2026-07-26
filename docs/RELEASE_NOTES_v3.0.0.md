@@ -7,16 +7,33 @@ the proposal.
 
 ## The differentiator: attack generation and grading are separated, and the separation is enforced by a test, not a convention
 
-The Red Team Agent (which attacks) and the Judge Agent (which grades) run
-as separate OS processes with separate contexts. The Judge never reads the
-Red Team's reasoning, prompt history, or internal module state — only the
-`(case, response)` pair. That boundary is not just documented in
-`docs/ARCHITECTURE.md`; it is checked mechanically by
+The Red Team Agent (which attacks) and the Judge Agent (which grades) are
+**architecturally independent at the module and data level**: `judge.py`
+imports nothing under `redteam.agents` or `redteam.harness`, holds no Red
+Team state, and scores only from a `(case, response, attempt_id)` triple
+(`redteam/agents/judge.py:96-100,343`) — never the Red Team's reasoning,
+prompt history, or internal module state. `docs/ARCHITECTURE.md` sets a
+further goal, per-role OS-process isolation, as the design target; as
+shipped, `redteam/campaign.py::run_campaign` wires all six components
+(Orchestrator, Red Team, target client, Judge, store, Documentation) into
+one Python process, calling each in turn inside a single loop
+(`redteam/campaign.py:254,295,353,436`) — so today the boundary is enforced
+at the module/data level, not the OS-process level described as a goal in
+`docs/ARCHITECTURE.md`. Closing that gap is tracked separately (issue
+#73). What ships today is checked mechanically by
 `tests/redteam/test_judge_agent.py::test_independence_module_imports_no_red_team_or_sibling_agent_internals`,
 an AST import scan over `redteam/agents/judge.py` that fails the moment the
-Judge module imports anything under `redteam.agents` or `redteam.harness`.
-There is no code path by which the Judge can see how an attempt was
-generated — the test would fail if one were added.
+Judge module imports anything whose dotted path starts with
+`redteam.agents` or `redteam.harness`. That scan is narrower than "no code
+path can leak Red Team internals to the Judge": it does not catch
+`import redteam` followed by attribute access, `from redteam import
+agents`, a dynamic `importlib.import_module(...)` call, or — most
+plausibly, since it would look like ordinary observability code — `from
+redteam.observability.action_log import ActionLog`, which is not in the
+forbidden-prefix set and whose log entries carry full attempt payloads
+(`redteam/campaign.py:311-317`). The test enforces the module-boundary
+convention against accidental drift; it does not prove no code path could
+route Red Team internals into the Judge.
 
 ## What the platform is
 
