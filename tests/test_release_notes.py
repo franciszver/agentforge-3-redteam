@@ -359,6 +359,21 @@ def test_release_notes_quotes_the_full_kickoff_hard_constraint():
     )
 
 
+def test_release_notes_discloses_the_minimal_repro_gap():
+    """The kickoff brief's Documentation Agent bullet (elided in the notes'
+    HARD CONSTRAINT quote) requires filed vuln reports to carry a 'minimal
+    repro' field; vuln_report.schema.json deliberately has none. The notes
+    must not claim 'nothing after the colon is adverse' without naming this
+    gap, saying the omission is deliberate/by-contract, and pointing to
+    where the repro actually lives (the in-process ExploitRecord, and the
+    committed recording each report names via recording_ref)."""
+    text = _text()
+    normalized = " ".join(text.split())
+    assert "minimal_repro" in normalized or "minimal repro" in normalized.lower()
+    assert "ExploitRecord" in normalized or "exploit record" in normalized.lower()
+    assert "recording_ref" in normalized
+
+
 def test_release_notes_does_not_call_the_parenthesised_mechanism_an_aside():
     """The kickoff brief's '(separate process/context)' is the HARD
     CONSTRAINT's own definition of architectural independence, not a
