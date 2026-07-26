@@ -48,6 +48,14 @@
 | TRI-013 | False Positive | Overlong `/chat` message not visibly rejected (issue #25) | FALSE POSITIVE (resolved), narrowly — **when evidence retrieval is enabled** the guard fires on the raw message and rejection is swallowed by documented fail-soft handling; on the default (retrieval-disabled) config the guard is never reached at all. LLM-prompt/conversation-store/regex paths this resolution left untraced were traced to completion at #54 — see TRI-014 |
 | TRI-014 | Medium | Unbounded `ConversationStore` growth (issue #54) | confirmed-real (structural, code-verified) / fix-recommended — no length bound on `ChatRequest.message` anywhere in the stack, and `ConversationStore` never evicts; filed `EXP-0004`/`VULN-0004`, owner-approved 2026-07-25 |
 
+**Upstream status (issue #58):** Phase 2 shipped `v2.1.0` (merge `923fb7d`,
+2026-07-25) after these four findings were filed. TRI-001/002/003/014 each
+now carry an "Upstream status" line (see each entry below) — summary: all
+four hold unchanged, both on `v2.1.0`'s default config and with its two new
+opt-in verification gates (`copilot_claim_answer_grounding_enabled`,
+`copilot_extraction_tool_call_scoping_enabled`, both default `False`)
+enabled. Full trace: `docs/UPSTREAM_STATUS.md`.
+
 ---
 
 ## Critical (confirmed)
@@ -76,6 +84,11 @@
 - **Rationale for not downgrading:** this is not a theoretical insecure
   default — it was reproduced live against the running target and approved
   by the owner as a real, exploitable gap.
+- **Upstream status (issue #58, `v2.1.0`/`923fb7d`):** holds, unconditionally
+  — no line in `git diff v2.0.0..v2.1.0` touches authentication.
+  Byte-identical, same line numbers, at both tags
+  (`services/copilot-agent/app/chat.py:194,200,201,304,306`). Full
+  citations and rationale: `docs/UPSTREAM_STATUS.md`.
 
 ### TRI-002 — Discontinued medication reported as "currently taking," verified
 
@@ -100,6 +113,17 @@
   medication-currency claim that is actually false is a direct patient-safety
   risk (drug interaction / dosing decisions made on stale data) — critical is
   the correct tier regardless of exploit complexity.
+- **Upstream status (issue #58, `v2.1.0`/`923fb7d`):** holds, both on
+  default config (`check_source_ref` unchanged,
+  `verification.py:538,560,564,566`) and with `v2.1.0`'s two new opt-in
+  verification gates (`copilot_claim_answer_grounding_enabled`,
+  `copilot_extraction_tool_call_scoping_enabled`, both default `False`)
+  enabled — computed directly against the real recorded draw, not just
+  reasoned about: the citing call is "engaged" (the medication name is a
+  shared token with the answer) and the claim text is lexically "grounded"
+  in the answer, so neither new gate downgrades the `status=discontinued`
+  citation. Full citations, computation, and rationale:
+  `docs/UPSTREAM_STATUS.md`.
 
 ### TRI-003 — Topically irrelevant `SourceRef` verified an unrelated claim
 
@@ -120,6 +144,17 @@
   `exploit_id` from TRI-002 (different reproduction, same root cause class).
   Kept as its own line item rather than merged with TRI-002 because it is a
   separately filed, separately approved report with its own `detect()` run.
+- **Upstream status (issue #58, `v2.1.0`/`923fb7d`):** holds, both on
+  default config and with `v2.1.0`'s two new opt-in gates enabled —
+  computed against the real recorded draw. The offending citation (an
+  appointment record's `status` field, backing a blood-pressure claim) is
+  not caught by either new gate: the citing call IS "engaged" (its OWN
+  date/time/provider fields are quoted in the answer), so the per-call
+  `tool_call_scoping` gate leaves it alone; and the claim's text is lexically
+  "grounded" in the answer (which just restates the question's own
+  premise), so `answer_grounding` leaves it alone too. Neither gate checks
+  relevance at the (claim, cited FIELD) level this finding actually needs.
+  Full citations, computation, and rationale: `docs/UPSTREAM_STATUS.md`.
 
 ---
 
@@ -551,6 +586,11 @@
   cold-review pass added 6 more) via
   `evals/analysis/dos_input_bound_resolution.py::resolve_issue_54` and its
   citation-verification test (`tests/test_dos_input_bound_resolution.py`).
+- **Upstream status (issue #58, `v2.1.0`/`923fb7d`):** holds, unconditionally
+  — `ChatRequest.message`/`ConversationStore` are byte-identical, same line
+  numbers, at both tags (`chat.py:137,570,578,580,583,590`), and nothing in
+  `git diff v2.0.0..v2.1.0` adds a length bound or eviction path anywhere.
+  Full citations and rationale: `docs/UPSTREAM_STATUS.md`.
 
 ---
 
