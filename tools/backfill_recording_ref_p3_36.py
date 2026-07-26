@@ -169,12 +169,27 @@ def _backfill_one(plan: dict[str, Any], validator: Draft202012Validator) -> tupl
     # approval stamps must match the reconstruction exactly; the
     # reconstruction's own recording_ref is new by definition and is not
     # expected to appear in the pre-image at all.
+    #
+    # Cold-review FIX 4 (issue #77 follow-up): this loop originally iterated
+    # pre_image.items() ONLY, so a field present in `reconstructed` but
+    # ABSENT from `pre_image` (e.g. `remediation` deleted from an approved
+    # artifact by hand) was never compared at all -- it was silently
+    # re-materialised into post_image from the reconstruction rather than
+    # flagged as a mismatch. Also walk reconstructed.items() (excluding
+    # recording_ref, which is new by definition and never in pre_image) so a
+    # field missing from the on-disk pre-image is caught the same way a
+    # field that DIFFERS is.
     mismatches = []
     for key, value in pre_image.items():
         if key in _APPROVAL_STAMP_FIELDS:
             continue
         if reconstructed.get(key) != value:
             mismatches.append((key, value, reconstructed.get(key)))
+    for key, value in reconstructed.items():
+        if key == "recording_ref" or key in _APPROVAL_STAMP_FIELDS:
+            continue
+        if key not in pre_image:
+            mismatches.append((key, pre_image.get(key), value))
     if mismatches:
         details = "; ".join(f"{k}: on_disk={v1!r} reconstructed={v2!r}" for k, v1, v2 in mismatches)
         raise SystemExit(
