@@ -53,6 +53,7 @@ ISSUE_54_RECORDING_PATH = (
     / "dos-unbounded-chat-message-length"
 )
 
+
 @pytest.fixture()
 def draw1() -> dict:
     return json.loads(RECORDING_PATH.read_text(encoding="utf-8"))

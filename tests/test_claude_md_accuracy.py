@@ -138,9 +138,7 @@ class TestStandingUpTargetPathsExistInPinnedTarget:
     exist there. Read-only: uses `git cat-file -e v2.0.0:<path>` from the
     sibling checkout, never `git checkout`."""
 
-    @pytest.mark.parametrize(
-        "path", _target_paths_in_standing_up_section() if target_repo_available() else []
-    )
+    @pytest.mark.parametrize("path", _target_paths_in_standing_up_section())
     def test_path_exists_at_pinned_target_tag(self, path):
         result = subprocess.run(
             ["git", "cat-file", "-e", f"{TARGET_TAG}:{path}"],
