@@ -408,20 +408,14 @@ class DocumentationAgent:
                 "(filed or pending human approval) -- one exploit, one report"
             )
 
-    def _persist(self, report: Mapping[str, Any]) -> None:
-        """Persist a FILED report as ``<report_id>.json``."""
+    def _persist(self, report: Mapping[str, Any], *, suffix: str = ".json") -> None:
+        """Persist a report as ``<report_id><suffix>`` -- ``suffix=".json"``
+        (the default) for a FILED report, ``suffix=PENDING_SUFFIX`` (issue
+        #63) for a PENDING one. The latter is what makes a pending report
+        survive the filing process exiting."""
         if self._reports_dir is None:
             return
-        path = self._reports_dir / f"{report['report_id']}.json"
-        path.write_text(json.dumps(dict(report), indent=2), encoding="utf-8")
-
-    def _persist_pending(self, report: Mapping[str, Any]) -> None:
-        """Persist a PENDING report as ``<report_id>.pending-human-approval.json``
-        (issue #63) -- this is what makes it survive the filing process
-        exiting."""
-        if self._reports_dir is None:
-            return
-        path = self._reports_dir / f"{report['report_id']}{PENDING_SUFFIX}"
+        path = self._reports_dir / f"{report['report_id']}{suffix}"
         path.write_text(json.dumps(dict(report), indent=2), encoding="utf-8")
 
     def _remove_pending_file(self, report_id: str) -> None:
@@ -460,7 +454,7 @@ class DocumentationAgent:
 
         if report["requires_human_gate"]:
             self._pending[exploit_id] = report
-            self._persist_pending(report)
+            self._persist(report, suffix=PENDING_SUFFIX)
             return {**report, "status": "pending_human_approval"}
 
         self._filed[exploit_id] = report
