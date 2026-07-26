@@ -63,15 +63,39 @@ its source ``exploit_id``, and a second report for the same ``exploit_id``
 ``build_vuln_report`` is model-optional and side-effect-free -- it just
 returns a dict, useful directly in tests or a REPL. ``DocumentationAgent``
 adds the stateful pieces (validation, the human-approval gate, duplicate
-protection) and, if constructed with ``reports_dir``, persists each newly
-*filed* report (auto-filed or freshly approved) as
-``<reports_dir>/<report_id>.json`` -- a flat-file store is enough here
-because reports are terminal, append-only artifacts (unlike the exploit DB,
-nothing ever queries "which reports are open" across categories; that's the
-Observability Layer's job over ``ExploitDB`` + report severity, see
-``redteam/observability/findings.py``). Pending-approval reports are held
-only in memory until approved, by design -- they are not yet a filed
-artifact.
+protection) and, if constructed with ``reports_dir``, persists both filed
+AND pending reports:
+
+- A *filed* report (auto-filed or freshly approved) is written as
+  ``<reports_dir>/<report_id>.json``.
+- A *pending* report (issue #63) is written as
+  ``<reports_dir>/<report_id>.pending-human-approval.json`` -- the same
+  suffix convention ``tools/build_vuln_reports.py`` already used for
+  ``VULN-0004`` before this issue. On approval, the filed file is written
+  FIRST and the pending file is then removed -- so a crash between the two
+  steps leaves both on disk rather than neither, and is self-healing (see
+  below).
+
+A flat-file store is enough here because reports are terminal, append-only
+artifacts (unlike the exploit DB, nothing ever queries "which reports are
+open" across categories; that's the Observability Layer's job over
+``ExploitDB`` + report severity, see ``redteam/observability/findings.py``).
+
+**Loading (issue #63/#66).** ``DocumentationAgent.__init__`` reads every
+``*.json`` in ``reports_dir`` (if given) back into ``_filed``/``_pending``,
+keyed by ``exploit_id``, validating each against the contract. This is what
+makes ``approve()`` reachable across a process boundary: a report filed
+pending by one process is loaded straight back into ``_pending`` by any
+later ``DocumentationAgent(reports_dir=...)`` construction -- no bespoke
+per-report reconstruction script needed (contrast
+``tools/approve_vuln_0004.py``, written before this fix). If the SAME
+``exploit_id`` is present as both a filed report and a stale pending
+leftover (the crash case above), the filed report wins and the stale
+pending entry is dropped silently from ``_pending`` -- an already-filed
+exploit is never re-offered for approval. A file that can't be parsed or
+fails schema validation raises ``DocumentationAgentError`` at construction
+time rather than being silently skipped -- a reports_dir this module can't
+read must fail loudly, not quietly lose a pending report.
 
 ## Why the vuln_report contract has no ``minimal_repro``/``recording_ref``
 
@@ -118,6 +142,10 @@ from redteam.harness.db import now_iso
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _VULN_REPORT_SCHEMA_PATH = _REPO_ROOT / "contracts" / "v1" / "vuln_report.schema.json"
+
+# Durable-pending filename suffix (issue #63) -- reused from the convention
+# ``tools/build_vuln_reports.py`` already established for ``VULN-0004``.
+PENDING_SUFFIX = ".pending-human-approval.json"
 
 Narrator = Callable[[Mapping[str, Any], Mapping[str, Any]], Mapping[str, Any]]
 
@@ -334,6 +362,36 @@ class DocumentationAgent:
             self._reports_dir.mkdir(parents=True, exist_ok=True)
         self._filed: dict[str, dict[str, Any]] = {}
         self._pending: dict[str, dict[str, Any]] = {}
+        self._load_persisted()
+
+    def _load_persisted(self) -> None:
+        """Load every already-persisted report in ``reports_dir`` back into
+        ``_filed``/``_pending`` (issue #63) -- see the module docstring's
+        "Loading" section for the full contract."""
+        if self._reports_dir is None:
+            return
+        for path in sorted(self._reports_dir.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise DocumentationAgentError(
+                    f"could not load persisted report {path}: {exc}"
+                ) from exc
+            if not isinstance(data, dict):
+                raise DocumentationAgentError(f"persisted report {path} is not a JSON object")
+            self._validate(data)
+            exploit_id = data["exploit_id"]
+            if path.name.endswith(PENDING_SUFFIX):
+                self._pending[exploit_id] = dict(data)
+            else:
+                self._filed[exploit_id] = dict(data)
+        # A filed report supersedes a stale pending leftover for the same
+        # exploit_id (e.g. approve()'s pending-file unlink failed after the
+        # filed file was already written) -- never re-offer an
+        # already-filed exploit for approval.
+        for exploit_id in list(self._pending):
+            if exploit_id in self._filed:
+                del self._pending[exploit_id]
 
     def _validate(self, report: Mapping[str, Any]) -> None:
         errors = sorted(self._validator.iter_errors(report), key=lambda e: list(e.path))
@@ -351,10 +409,26 @@ class DocumentationAgent:
             )
 
     def _persist(self, report: Mapping[str, Any]) -> None:
+        """Persist a FILED report as ``<report_id>.json``."""
         if self._reports_dir is None:
             return
         path = self._reports_dir / f"{report['report_id']}.json"
         path.write_text(json.dumps(dict(report), indent=2), encoding="utf-8")
+
+    def _persist_pending(self, report: Mapping[str, Any]) -> None:
+        """Persist a PENDING report as ``<report_id>.pending-human-approval.json``
+        (issue #63) -- this is what makes it survive the filing process
+        exiting."""
+        if self._reports_dir is None:
+            return
+        path = self._reports_dir / f"{report['report_id']}{PENDING_SUFFIX}"
+        path.write_text(json.dumps(dict(report), indent=2), encoding="utf-8")
+
+    def _remove_pending_file(self, report_id: str) -> None:
+        if self._reports_dir is None:
+            return
+        path = self._reports_dir / f"{report_id}{PENDING_SUFFIX}"
+        path.unlink(missing_ok=True)
 
     def file_report(
         self,
@@ -386,6 +460,7 @@ class DocumentationAgent:
 
         if report["requires_human_gate"]:
             self._pending[exploit_id] = report
+            self._persist_pending(report)
             return {**report, "status": "pending_human_approval"}
 
         self._filed[exploit_id] = report
@@ -415,7 +490,12 @@ class DocumentationAgent:
         report["approved_by"] = approved_by
         self._validate(report)
         self._filed[exploit_id] = report
+        # Write the filed artifact BEFORE removing the pending one: if this
+        # process dies between the two steps, both files are left on disk
+        # rather than neither, and _load_persisted's "filed wins" rule
+        # self-heals the stale leftover on the next load (issue #63).
         self._persist(report)
+        self._remove_pending_file(report["report_id"])
         return {**report, "status": "filed"}
 
     def get_filed(self, exploit_id: str) -> dict[str, Any] | None:

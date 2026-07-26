@@ -476,4 +476,19 @@ def run_campaign(
                 action_log.append(agent="judge", event_type="judge_drift_suspected", details=exc.error)
                 result.signals.append({"error_type": "judge_drift_suspected", **exc.error})
 
+    # Post-loop export (issue #63): ``emit_snapshot`` (called at the TOP of
+    # each iteration, in the default ``snapshot_fn`` path) is the only place
+    # that calls ``action_log.export_jsonl`` -- so every event appended
+    # AFTER that iteration's own snapshot call (directive_issued through
+    # vuln_report_filed/pending, regression/drift signals) never reached
+    # ``action_log_ref`` for the LAST iteration a run makes. For
+    # ``max_iterations=1`` that is every event the run produced. Exporting
+    # here, unconditionally, after the loop (whether it ran to
+    # ``max_iterations`` or broke early on ``budget_exceeded``) guarantees a
+    # run's own events are never lost, regardless of whether the caller
+    # injected a fake ``snapshot_fn`` (as every deterministic test in
+    # ``tests/redteam/test_campaign.py`` does) that never touches
+    # ``action_log_ref`` at all.
+    action_log.export_jsonl(action_log_ref)
+
     return result
