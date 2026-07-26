@@ -63,7 +63,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from redteam.agents.documentation import DocumentationAgent  # noqa: E402
+from redteam.agents.documentation import DocumentationAgent, build_vuln_report  # noqa: E402
 from tools.build_vuln_report_p3_54 import _build_exploit_record  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -153,6 +153,15 @@ def main() -> int:
     # that somehow didn't load it.
     already_loaded = documentation.get_pending(_EXPLOIT_ID)
     if already_loaded is not None:
+        # Cold-review fix (this PR): ``already_loaded`` is read straight back
+        # off ``_PENDING_PATH`` by ``DocumentationAgent.__init__``'s auto-load
+        # -- it is THE SAME FILE this script is trying to authenticate, not
+        # independent evidence. It is used ONLY below to satisfy
+        # ``approve()``'s in-memory precondition (the exploit_id must be a
+        # key in ``documentation._pending``); it must never be the left-hand
+        # side of the field-for-field comparison, or the check degenerates
+        # into comparing the on-disk file against itself, which always
+        # passes regardless of tampering.
         pre_approval = {**already_loaded, "status": "pending_human_approval"}
     else:
         pre_approval = _file_pending(
@@ -163,13 +172,19 @@ def main() -> int:
             # forced (FORCE_HUMAN_GATE_CATEGORIES); explicit here for clarity.
         )
 
-    # Compare parsed JSON field-for-field against what is already committed
-    # on disk -- NOT a byte-for-byte comparison (key order, indentation, and
-    # trailing-newline differences are normalised away by json.loads on both
-    # sides). Still a strong guard: it fires on any FIELD-VALUE drift. Note
-    # what never enters this comparison at all, because it never enters the
-    # vuln_report in the first place (see documentation.py's "Why the
-    # vuln_report contract has no minimal_repro/recording_ref" section):
+    # Authoritative re-derivation: rebuild what the pending report SHOULD be
+    # directly from the re-derived ``record`` via ``build_vuln_report`` --
+    # NOT from ``pre_approval``/``already_loaded`` above, which (when the
+    # auto-load path is taken, i.e. in every real re-run) is itself read off
+    # ``_PENDING_PATH``. Comparing THIS reconstruction against what is
+    # already committed on disk is what makes this a real cross-check: it
+    # fires on any FIELD-VALUE drift between the artifact and what the
+    # trusted exploit record actually produces, whether the drift came from
+    # tampering or corruption. Compared as parsed JSON, not byte-for-byte
+    # (key order, indentation, trailing-newline differences are normalised
+    # away). Note what never enters this comparison at all, because it never
+    # enters the vuln_report in the first place (see documentation.py's "Why
+    # the vuln_report contract has no minimal_repro/recording_ref" section):
     # the exploit record's case_id, attempt_id, verdict_id, source,
     # recording_ref, and minimal_repro.steps, plus confirmed_at (which
     # _build_exploit_record() sets to now_iso() every run, per
@@ -179,9 +194,12 @@ def main() -> int:
     # contains (schema_version, report_id, exploit_id, severity,
     # clinical_impact, observed, expected, remediation,
     # fix_validation_status, requires_human_gate, filed_at) is checked.
-    # (``_file_pending`` above already guarantees ``pre_approval["status"] ==
-    # "pending_human_approval"`` -- it raises SystemExit otherwise.)
-    reconstructed_body = {k: v for k, v in pre_approval.items() if k != "status"}
+    reconstructed_body = build_vuln_report(
+        record,
+        report_id=pending_on_disk["report_id"],
+        filed_at=original_filed_at,
+        force_human_gate=True,
+    )
     if reconstructed_body != pending_on_disk:
         print(
             "reconstructed pre-approval report does not match the committed "
