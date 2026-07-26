@@ -374,8 +374,8 @@ These carry equal prominence to the findings above, not an afterthought.
   combination rather than risk the collision.
 - **The test count is environment-dependent — state both, never a bare
   number.** With the Phase 2 sibling checkout present (this development
-  environment), the full suite is `435 passed`. In CI, which never checks
-  out the sibling, the same suite is `329 passed, 106 skipped` — the 106
+  environment), the full suite is `436 passed`. In CI, which never checks
+  out the sibling, the same suite is `330 passed, 106 skipped` — the 106
   skips are exactly the citation-verification tests that require reading
   the pinned target's source (`TestTraceCitationsAgainstPinnedTarget`,
   `TestCitationsAgainstPinnedTargets`, and the CLAUDE.md target-path
