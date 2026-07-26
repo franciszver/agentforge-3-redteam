@@ -86,9 +86,14 @@ def test_no_committed_doc_describes_gate_as_critical_severity_only():
 # instance" and used that property to differentiate this platform from
 # Garak. ``redteam/campaign.py::run_campaign`` actually calls all four
 # components as in-process Python objects inside one ``for`` loop -- there
-# is no process, thread, or subprocess boundary anywhere in the platform
-# (``grep -rn "multiprocessing\|subprocess\|Popen\|fork(" redteam/ tools/``
-# returns nothing). What IS real and enforced is module- and data-level
+# is no process, thread, or subprocess boundary between the four Zone-A/
+# Zone-B roles under ``redteam/`` or ``tools/`` (``grep -rn
+# "multiprocessing\|subprocess\|Popen\|fork(" redteam/ tools/`` returns
+# nothing; this assertion is scoped to those two directories -- it is not a
+# claim about the whole repo: ``evals/runner.py`` legitimately uses
+# ``subprocess.run`` to drive the target via ``docker exec``, which has
+# nothing to do with inter-agent isolation). What IS real and enforced is
+# module- and data-level
 # independence (an AST import scan in
 # ``tests/redteam/test_judge_agent.py``), which is a materially weaker
 # property than OS-process isolation and must not be described as if it
@@ -107,13 +112,21 @@ _PROCESS_ISOLATION_CLAIM_RE = re.compile(
     r"|separate (local )?process(es)?(\s*/\s*context(s)?)?"
     r"|process[- ]level isolation"
     r"|process (and context )?isolation"
+    r"|process\s*/\s*context"
     r"|process independence"
-    r"|own local model instance",
+    r"|own local model instance"
+    r"|own (isolated )?process(es)?"
+    r"|isolated process(es)?"
+    r"|own separate (model|process)"
+    r"|separate model instance(s)?"
+    r"|never share a process"
+    r"|its own process",
     re.IGNORECASE,
 )
 
 _GOAL_QUALIFIER_RE = re.compile(
-    r"design goal|not yet implemented|not currently implemented"
+    r"design goal|design objective|design target|stated goal"
+    r"|not yet implemented|not currently implemented|not implemented|as shipped"
     r"|future work|aspirational|remains? (a )?goal|longer[- ]term goal"
     r"|not\s.{0,40}isolation (today|yet)|eventually",
     re.IGNORECASE,
@@ -127,13 +140,27 @@ _PROCESS_CLAIM_WINDOW = 400
 
 def test_no_committed_doc_claims_os_process_isolation_is_implemented():
     # Supporting fact: the shipped code has no process-spawning primitive
-    # anywhere in the platform, so any *unqualified* OS-process-isolation
-    # claim in a committed doc is describing code that does not exist.
+    # under redteam/ or tools/ (evals/runner.py legitimately uses
+    # subprocess.run to drive the target via docker exec -- unrelated to
+    # inter-agent isolation, so out of scope here), so any *unqualified*
+    # OS-process-isolation claim in a committed doc is describing code that
+    # does not exist.
     grep = subprocess.run(
         ["git", "grep", "-nE", r"multiprocessing|subprocess|Popen|fork\(", "--", "redteam/", "tools/"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+    )
+    # `git grep` exit codes: 0 = matches found, 1 = no matches, anything
+    # else (e.g. 128 in a checkout with no `.git`) is an environment
+    # failure, not a statement about the docs -- these two cases must not
+    # share a failure message, or a broken checkout gets blamed for a docs
+    # defect it says nothing about.
+    assert grep.returncode in (0, 1), (
+        "could not run `git grep` to check for process-spawning primitives "
+        f"under redteam/ or tools/ (exit {grep.returncode}) -- this "
+        "environment cannot be checked (e.g. no .git present), which says "
+        "nothing about whether the docs are correct:\n" + grep.stderr
     )
     assert grep.returncode == 1 and not grep.stdout, (
         "expected no process-spawning primitive under redteam/ or tools/ "
