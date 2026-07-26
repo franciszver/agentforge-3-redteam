@@ -123,17 +123,20 @@ def _display_path(path: Path) -> str:
 
 def _is_approved(path: Path) -> bool:
     """A report on disk counts as owner-approved evidence -- and therefore
-    untouchable by this script -- iff it carries both approval stamps
-    (``DocumentationAgent.approve`` always sets both together; see
-    ``redteam/agents/documentation.py``). Any read/parse failure is treated
-    as "not approved" rather than raising, so a corrupt/foreign file next to
-    real reports can't crash the safety check itself -- ``main`` still
-    refuses to touch a same-named target it can't understand."""
+    untouchable by this script -- if it carries EITHER approval stamp.
+    ``DocumentationAgent.approve`` always sets ``approved_at``/``approved_by``
+    together (see ``redteam/agents/documentation.py``), so a real approved
+    report always has both -- this checks either (OR, not AND) so a
+    corrupted or hand-edited report missing just one of the two stamps still
+    fails closed as "approved" rather than being treated as safe to
+    overwrite. Any read/parse failure is likewise treated as "approved" --
+    a file this script can't understand must not be silently clobbered
+    either; ``main`` refuses and names it instead."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return False
-    return bool(data.get("approved_by")) and bool(data.get("approved_at"))
+        return True
+    return bool(data.get("approved_by")) or bool(data.get("approved_at"))
 
 
 def _without_filed_at(body: Mapping[str, Any]) -> dict[str, Any]:

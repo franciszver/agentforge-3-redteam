@@ -110,6 +110,31 @@ def test_main_partial_approval_blocks_the_entire_run(
     )
 
 
+def test_main_fails_closed_on_a_report_with_only_one_approval_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report missing exactly one of ``approved_at``/``approved_by`` (hand-
+    edited, corrupted, or otherwise malformed) is not something the real
+    ``DocumentationAgent.approve`` ever produces -- it always sets both
+    together -- but the safety net must still fail CLOSED on it (treat it as
+    approved, refuse) rather than open (treat it as unapproved, overwrite).
+    """
+    partial = dict(_APPROVED_VULN_0001)
+    del partial["approved_by"]  # approved_at present, approved_by missing
+    path = tmp_path / "VULN-0001.json"
+    path.write_text(json.dumps(partial, indent=2) + "\n", encoding="utf-8")
+    before = _snapshot(tmp_path)
+
+    monkeypatch.setattr(build_vuln_reports, "_REPORTS_DIR", tmp_path)
+    rc = build_vuln_reports.main()
+
+    assert rc != 0
+    assert _snapshot(tmp_path) == before, (
+        "a report with a partial approval stamp was overwritten -- the "
+        "safety net must fail closed on ambiguous approval state"
+    )
+
+
 def test_main_is_idempotent_when_nothing_on_disk_is_approved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
