@@ -418,7 +418,17 @@ any case (§4.2).
 ### 5.2 The three owner-approved critical vuln reports, plus VULN-0004
 
 All three criticals are reproducible from `evals/recordings/` and filed as
-structured, schema-valid JSON under `docs/vuln_reports/`:
+structured, schema-valid JSON under `docs/vuln_reports/`. As of issue #77
+(P3.36), every filed report also names its own evidence directly: each
+`docs/vuln_reports/VULN-000N.json` carries an optional `recording_ref`
+field (`contracts/v1/vuln_report.schema.json`) pointing at the same
+directory this table lists, computed deterministically by
+`build_vuln_report()` from the source exploit record's `case_id` —
+`f"evals/recordings/{case_id}/"`, never hand-typed. The table below
+remains the human-readable index across all four findings in one place
+(and the only place a per-recording draw count is spelled out), but a
+reader no longer has to cross-reference it just to find one report's own
+evidence:
 
 | Report | Exploit ID | Label | Recording (sample size) |
 |---|---|---|---|

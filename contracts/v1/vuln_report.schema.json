@@ -31,7 +31,12 @@
     "requires_human_gate": { "type": "boolean" },
     "filed_at": { "type": "string", "format": "date-time" },
     "approved_at": { "type": "string", "format": "date-time" },
-    "approved_by": { "type": "string", "minLength": 1 }
+    "approved_by": { "type": "string", "minLength": 1 },
+    "recording_ref": {
+      "type": "string",
+      "pattern": "^evals/recordings/[^/]+/$",
+      "description": "Optional (issue #77/P3.36). Directory under evals/recordings/ (trailing slash, no filename) containing the committed, replayable draw(s) that back this report -- the report's own pointer to its evidence, so a reader does not have to cross-reference docs/ATO_EVIDENCE_PACKET.md §5.2 to find it. Deliberately a directory, not a single draw file: build_vuln_report() derives it from the source exploit_record's case_id (evals/recordings/<case_id>/), matching the convention every case's recordings already follow (see tools/build_vuln_reports.py::_load_recordings). Computed by build_vuln_report(), never hand-typed -- see redteam/agents/documentation.py."
+    }
   },
   "if": { "properties": { "severity": { "const": "critical" } } },
   "then": { "properties": { "requires_human_gate": { "const": true } } }

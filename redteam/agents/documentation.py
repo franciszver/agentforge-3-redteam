@@ -97,15 +97,16 @@ fails schema validation raises ``DocumentationAgentError`` at construction
 time rather than being silently skipped -- a reports_dir this module can't
 read must fail loudly, not quietly lose a pending report.
 
-## Why the vuln_report contract has no ``minimal_repro``/``recording_ref``
+## Why the vuln_report contract has no ``minimal_repro.steps``, and how
+## ``recording_ref`` works (issue #77/P3.36)
 
 ``vuln_report.schema.json`` is ``additionalProperties: false`` and has no
-``steps``/``recording_ref`` field -- ``observed``/``expected`` are copied
-verbatim from the exploit record's ``minimal_repro`` onto the report, and
-the report's own ``exploit_id`` is the join key back to the full
-``ExploitRecord`` (its ``minimal_repro.steps`` and ``recording_ref``) that
-produced it. **This join key is in-process only** -- ``ExploitDB`` is
-sqlite-backed but every report-builder in this repo constructs
+``steps`` field -- ``observed``/``expected`` are copied verbatim from the
+exploit record's ``minimal_repro`` onto the report; the full repro steps
+stay on the ``ExploitRecord``, not the report. The report's own
+``exploit_id`` is the join key back to that full ``ExploitRecord`` --
+**but that join key is in-process only**: ``ExploitDB`` is sqlite-backed
+but every report-builder in this repo constructs
 ``DocumentationAgent(reports_dir=None)`` (``tools/build_vuln_reports.py``,
 ``tools/build_vuln_report_p3_54.py``, ``tools/load_test_replay.py``,
 ``tools/run_campaign.py``) and none calls ``ExploitDB.add_record`` against
@@ -115,18 +116,30 @@ a committed, on-disk database, so there is no persisted exploit DB an
 filed report reproducible by an engineer with zero platform context is
 NOT the ``exploit_id`` resolving to a committed database -- it is the
 durable, already-committed evidence under ``evals/recordings/<probe-name>/``.
-**No report names its own evidence** -- ``vuln_report.schema.json`` is
-``additionalProperties: false`` with no ``recording_ref`` field (see
-above), so a filed ``docs/vuln_reports/<report_id>.json`` cannot and does
-not point at its recording; that report-to-recording mapping lives ONLY
-in ``docs/ATO_EVIDENCE_PACKET.md`` §5.2, which a reader must consult
-separately. Nor do ``observed``/``expected`` carry repro steps -- they
-carry the *detection signal* ``Judge.detect()`` produced (e.g.
-``"detect() returned vulnerable=True, label='garbage_token_accepted'"``),
-not an endpoint, payload, token, or case module; the actual runnable
-repro is the paired ``evals/cases/<case>.py`` detection logic plus the
-committed recording JSON under ``evals/recordings/<probe-name>/`` that
-§5.2 maps the report to.
+
+**A report DOES name its own evidence** (as of issue #77): the schema's
+``recording_ref`` property (optional -- additive, stays contract ``v1``,
+see ``contracts/README.md``'s versioning log) is a directory under
+``evals/recordings/`` (e.g. ``"evals/recordings/identity-authz-garbage-
+bearer-token/"``, trailing slash, no filename) containing the committed,
+replayable draw(s) backing the finding. ``build_vuln_report`` computes it
+deterministically from the source exploit record's own required
+``case_id`` field -- ``f"evals/recordings/{case_id}/"`` -- the same
+``<case_id>``-as-directory-name convention
+``tools/build_vuln_reports.py::_load_recordings`` already relies on; it is
+never hand-typed onto a report, and a narrator cannot override it (see
+``_NARRATOR_PROTECTED_FIELDS`` below -- letting prose-polishing logic
+repoint a reader at the wrong evidence would defeat the whole point of the
+field). A filed ``docs/vuln_reports/<report_id>.json`` now resolves to its
+own evidence directly; ``docs/ATO_EVIDENCE_PACKET.md`` §5.2's table is
+still there as a human-readable index across all findings, but a reader no
+longer has to cross-reference it just to find one report's recording.
+Nor do ``observed``/``expected`` carry repro steps -- they carry the
+*detection signal* ``Judge.detect()`` produced (e.g. ``"detect() returned
+vulnerable=True, label='garbage_token_accepted'"``), not an endpoint,
+payload, token, or case module; the actual runnable repro is the paired
+``evals/cases/<case>.py`` detection logic plus the committed recording
+JSON under the report's own ``recording_ref``.
 """
 
 from __future__ import annotations
@@ -254,9 +267,19 @@ _DEFAULT_REMEDIATION = (
 
 # Fields a narrator is not allowed to change via its return value -- the
 # safety-relevant/identity fields stay purely deterministic even when a
-# narrator is wired in.
+# narrator is wired in. ``recording_ref`` is here (issue #77) for the same
+# reason as the rest: a narrator that could repoint it would let
+# prose-polishing logic misdirect a reader at the wrong evidence directory.
 _NARRATOR_PROTECTED_FIELDS = frozenset(
-    {"schema_version", "report_id", "exploit_id", "severity", "requires_human_gate", "filed_at"}
+    {
+        "schema_version",
+        "report_id",
+        "exploit_id",
+        "severity",
+        "requires_human_gate",
+        "filed_at",
+        "recording_ref",
+    }
 )
 
 
@@ -317,6 +340,7 @@ def build_vuln_report(
     exploit_id = _require(exploit_record, "exploit_id")
     category = _require(exploit_record, "category")
     repro = _require(exploit_record, "minimal_repro")
+    case_id = _require(exploit_record, "case_id")
     severity = SEVERITY_BY_CATEGORY.get(category, _DEFAULT_SEVERITY)
 
     report: dict[str, Any] = {
@@ -331,6 +355,11 @@ def build_vuln_report(
         "fix_validation_status": fix_validation_status,
         "requires_human_gate": severity == "critical" or force_human_gate,
         "filed_at": filed_at or now_iso(),
+        # Issue #77: derived from the exploit record's own case_id, the same
+        # <case_id>-as-directory-name convention every recording under
+        # evals/recordings/ already follows -- never hand-typed, never
+        # narrator-overridable (see _NARRATOR_PROTECTED_FIELDS).
+        "recording_ref": f"evals/recordings/{case_id}/",
     }
 
     if narrator is not None:
