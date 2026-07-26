@@ -20,16 +20,16 @@ evidence table this script complements with runnable commands.
   immediately before and after any live call and confirm VRAM stays flat.
 - `pytest tests/ -q` green (deterministic — no live/network/GPU call in the
   default suite; confirmed while writing this doc). The printed count is
-  environment-dependent: **246 passed** when the sibling Phase 2 checkout
+  environment-dependent: **260 passed** when the sibling Phase 2 checkout
   (`../agentforge-2-evidence-agent`, pinned `v2.0.0`) is present locally;
-  **206 passed, 40 skipped** in CI and for anyone cloning this repo without
+  **220 passed, 40 skipped** in CI and for anyone cloning this repo without
   that sibling (the 40 skipped are `TestTraceCitationsAgainstPinnedTarget`,
   which class-skips cleanly when the sibling is absent — see
   `tests/test_dos_input_bound_resolution.py`).
 
 ```
 $ pytest tests/ -q
-246 passed in 0.63s          # with the sibling Phase 2 checkout present
+260 passed in 0.63s          # with the sibling Phase 2 checkout present
 ```
 
 ---
@@ -329,12 +329,12 @@ here for completeness:
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
 `python -m pytest tests/ -q` — on every push to `main` and on every pull
 request. CI does not check out the sibling Phase 2 target, so its printed
-count is **206 passed, 40 skipped** (the 40 skipped are
+count is **220 passed, 40 skipped** (the 40 skipped are
 `TestTraceCitationsAgainstPinnedTarget`, which class-skips cleanly when
 `../agentforge-2-evidence-agent` is absent). Live-model and target-stack
 runs remain manual, outside CI: every command in this script was run
 locally against the dev stack while writing this doc, with the sibling
-checkout present, giving **246 passed**. `pytest tests/ -q` is still the
+checkout present, giving **260 passed**. `pytest tests/ -q` is still the
 reproducibility bar — re-run it after pulling this branch to confirm
-nothing here has drifted: expect **246 passed** if you have the sibling
-Phase 2 checkout at `v2.0.0`, or **206 passed, 40 skipped** if you don't.
+nothing here has drifted: expect **260 passed** if you have the sibling
+Phase 2 checkout at `v2.0.0`, or **220 passed, 40 skipped** if you don't.

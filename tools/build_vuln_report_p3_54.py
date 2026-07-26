@@ -74,6 +74,19 @@ _RECORDING_PATH = (
 _EXPLOIT_ID = "EXP-0004"  # next unused id after EXP-0001..0003 (VULN-0001..0003)
 
 
+def _display_path(path: Path) -> str:
+    """Repo-root-relative for a nice log line when possible; falls back to
+    the absolute path when ``path`` isn't under ``_REPO_ROOT`` (e.g. a
+    scratch/tmp reports_dir) -- same fix as ``tools/build_vuln_reports.py``'s
+    ``_display_path`` (issue #64 cold-review FIX 6): pointed at a temp dir,
+    ``out_path.relative_to(_REPO_ROOT)`` used to raise ``ValueError`` on the
+    success path, after the artifact was already written."""
+    try:
+        return str(path.relative_to(_REPO_ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(path)
+
+
 def _build_exploit_record() -> dict:
     if not _RECORDING_PATH.exists():
         raise RuntimeError(f"expected recording not found: {_RECORDING_PATH}")
@@ -155,7 +168,7 @@ def main() -> int:
 
     print(f"exploit_id={record['exploit_id']} report_id={report['report_id']} "
           f"severity={report['severity']} status={status} -> "
-          f"{out_path.relative_to(_REPO_ROOT)}")
+          f"{_display_path(out_path)}")
     return 0
 
 

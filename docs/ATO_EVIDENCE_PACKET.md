@@ -319,9 +319,9 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **246 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **260 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **206 passed, 40 skipped** in CI
+present locally (confirmed at PR time); **220 passed, 40 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
 not check it out, so the 40 `TestTraceCitationsAgainstPinnedTarget` cases
 class-skip cleanly there (`tests/test_dos_input_bound_resolution.py`).
@@ -363,7 +363,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **246 passing tests (206 passed, 40 skipped in CI), no live/network/GPU
+- **260 passing tests (220 passed, 40 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -383,18 +383,18 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 246
-  with the sibling checkout present, or 206 passed / 40 skipped without
+  changes plus its expanded citation-verification test set move it to 250
+  with the sibling checkout present, or 220 passed / 40 skipped without
   it, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 246-test suite (206 in CI)
+### 5.1 The 250-test suite (210 in CI)
 
-`pytest tests/ -q` → **246 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **206 passed, 40 skipped**
+`pytest tests/ -q` → **260 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **220 passed, 40 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -426,6 +426,47 @@ trace — TRI-013 is the traced probe of that same `MAX_QUERY_CHARS`
 guard), not a fourth critical, and is not conflated with the three
 above.
 
+**Re-verifying without corrupting the approval record (issue #64).**
+`tools/build_vuln_reports.py` is the script that produced VULN-0001–0003
+from the recordings above, and it is safe to re-run against the real
+`docs/vuln_reports/` directory: before writing anything, it checks every
+target report for an existing `approved_by`/`approved_at` stamp, and if
+even one is present it refuses the **entire** run (exit non-zero, names
+every blocking file, writes nothing) rather than regenerating over
+approved evidence. Because all three findings here are `critical`
+severity, `DocumentationAgent.file_report` always holds them
+`pending_human_approval` — the human-approval step (`approved_at`/
+`approved_by`) that produced the committed `VULN-000{1,2,3}.json` was a
+separate, explicit approval action, not something `build_vuln_reports.py`
+does on its own — so the script can never re-derive and overwrite an
+already-approved file directly; the refusal above is what stops it from
+littering the directory with a stray, unapproved duplicate of already-
+approved evidence instead. Against a scratch directory (not
+`docs/vuln_reports/`), the same script is also idempotent for unapproved
+content: unchanged recordings reproduce byte-identical report bodies
+(ignoring `filed_at`, which legitimately differs run to run) rather than
+being silently re-stamped every time — making a rerun a genuine
+reproduction check, not just a generator. A reader can point the script
+at a scratch directory directly, with no editing required:
+
+```
+python tools/build_vuln_reports.py --out-dir /path/to/scratch-dir
+```
+
+The refuse-on-approved-collision guard (above) still applies to whatever
+directory `--out-dir` targets — it changes only *where* the script
+looks/writes, never whether it is willing to clobber an owner-approved
+report there; the default (no `--out-dir`) is unchanged and still targets
+`docs/vuln_reports/`. See
+`tests/tools/test_build_vuln_reports_nondestructive.py` for the enforced
+guarantee, including
+`test_cli_out_dir_lets_a_reader_regenerate_into_a_scratch_directory`,
+which invokes this exact command as a subprocess. `tools/build_vuln_report_p3_54.py` (VULN-0004) and
+`tools/approve_vuln_0004.py` share the same non-destructive discipline by
+construction: the former refuses outright if any `VULN-0004*.json`
+already exists, and the latter refuses unless there is a pending artifact
+to approve and nothing already filed.
+
 ### 5.3 Live-campaign + smoke evidence
 
 - **End-to-end campaign runner, live-verified.** PR #35 (P3.17): "Live
@@ -440,8 +481,8 @@ above.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 246 total with the sibling checkout present,
-  or 206 passed / 40 skipped without it, §5.1).
+  the repo has since grown to 250 total with the sibling checkout present,
+  or 220 passed / 40 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -561,8 +602,8 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (246 tests with the sibling checkout
-  present / 206 passed, 40 skipped in CI, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (250 tests with the sibling checkout
+  present / 220 passed, 40 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
