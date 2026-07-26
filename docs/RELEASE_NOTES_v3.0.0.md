@@ -10,9 +10,14 @@ imports nothing under `redteam.agents`, `redteam.harness`, or
 — never the Red Team's reasoning, prompt history, or internal module state.
 `docs/ARCHITECTURE.md` sets a further goal, per-role OS-process isolation,
 as the design target; as shipped, `redteam/campaign.py::run_campaign` wires
-all six components (Orchestrator, Red Team, target client, Judge, store,
-Documentation) into one Python process, calling each in turn inside a
-single loop (`redteam/campaign.py:254,295,353,446`) — so today the boundary
+all four agents (Orchestrator, Red Team, Judge, Documentation) — together
+with the two non-agent components that complete the platform's six per
+`docs/ARCHITECTURE.md`, the Regression Harness (`db`) and the
+Observability Layer (`action_log`), both of which `run_campaign` takes as
+parameters — into one Python process, calling the target client (the
+external system under attack, not a platform component) and each agent in
+turn inside a single loop (`redteam/campaign.py:254,295,353,446`) — so
+today the boundary
 is enforced at the module/data level, not the OS-process level described
 as a goal in `docs/ARCHITECTURE.md`, not yet implemented. That gap was
 raised and resolved at the documentation level in issue #73 (closed — the
