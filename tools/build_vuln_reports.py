@@ -158,6 +158,23 @@ def _is_approved(path: Path) -> bool:
         return True
 
 
+def _read_json_dict_or_none(path: Path) -> dict[str, Any] | None:
+    """Best-effort read of an existing (already known NOT owner-approved --
+    ``main``'s Layer 1 would have refused the whole run otherwise) report
+    for Layer 2's idempotent-regeneration comparison. Any of the failure
+    classes ``_is_approved`` guards against -- unreadable file, bad
+    encoding, malformed JSON, syntactically-valid-JSON-but-not-a-dict --
+    is treated as "no usable existing content" (regenerate), not a crash.
+    Unlike ``_is_approved``, this is NOT a fail-closed/refuse decision --
+    it just means Layer 2 has nothing to compare against and will write
+    fresh content, same as if the file didn't exist at all."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _without_filed_at(body: Mapping[str, Any]) -> dict[str, Any]:
     """Compare report content while ignoring ``filed_at`` -- that field is
     expected to differ run to run even when nothing else about the finding
@@ -311,16 +328,18 @@ def main(argv: Sequence[str] = ()) -> int:
 
     # Layer 2 -- idempotent regeneration. Write only what actually changed
     # (ignoring filed_at); leave byte-identical unapproved targets alone.
+    # ``_read_json_dict_or_none`` is at least as defensive as Layer 1's
+    # ``_is_approved`` (issue #64 cold-review FIX 5) -- reading an existing
+    # file this code can't understand must not crash mid-loop after earlier
+    # findings were already written (that would itself be a partial-write
+    # violation of the no-partial-writes guarantee). Reachable only
+    # defensively today (Layer 1's ``.glob()`` already read every file that
+    # matters), but a future edit could change that.
     summary: list[dict[str, Any]] = []
     for p in planned:
         out_path: Path = p["out_path"]
         report_body: dict[str, Any] = p["report_body"]
-        existing_body: dict[str, Any] | None = None
-        if out_path.exists():
-            try:
-                existing_body = json.loads(out_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                existing_body = None
+        existing_body = _read_json_dict_or_none(out_path) if out_path.exists() else None
 
         if existing_body is not None and _without_filed_at(existing_body) == _without_filed_at(report_body):
             written_body = existing_body  # genuine no-op: keep the original filed_at too
@@ -338,7 +357,11 @@ def main(argv: Sequence[str] = ()) -> int:
                 "confirmed": p["confirmed"],
                 "total": p["total"],
                 "path": _display_path(out_path),
-                "filed_at": written_body["filed_at"],
+                # A pre-existing report kept as-is (genuine no-op) but
+                # missing filed_at (hand-edited/corrupted) must not crash
+                # the summary print -- report it honestly as unknown rather
+                # than KeyError.
+                "filed_at": written_body.get("filed_at", "<missing>"),
             }
         )
 

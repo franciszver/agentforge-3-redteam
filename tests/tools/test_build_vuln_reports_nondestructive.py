@@ -255,3 +255,57 @@ def test_main_refuses_and_names_the_file_when_it_cannot_be_understood(
     rc = build_vuln_reports.main()
 
     assert rc != 0, "main() must refuse (not crash) when a report can't be parsed"
+
+
+@pytest.mark.parametrize(
+    "content_bytes, label",
+    [
+        (b"[]", "valid JSON but a list, not an object"),
+        (b"\xff\xfe\x00\xff", "invalid UTF-8 -- UnicodeDecodeError"),
+    ],
+)
+def test_read_json_dict_or_none_is_defensive_like_is_approved(
+    tmp_path: Path, content_bytes: bytes, label: str
+) -> None:
+    """Cold-review FIX 5 (issue #64): Layer 2's existing-content read used to
+    catch only ``json.JSONDecodeError``, narrower than Layer 1's
+    ``_is_approved``. An ``OSError``/``UnicodeDecodeError``/non-dict-JSON
+    there would crash mid-loop AFTER earlier findings were already written,
+    breaking the no-partial-writes guarantee -- currently unreachable only
+    because Layer 1's glob already reads the same file first, but a live
+    trap for a future editor. ``_read_json_dict_or_none`` must be at least
+    as defensive as ``_is_approved``: return ``None`` (no usable existing
+    content), never raise.
+    """
+    path = tmp_path / "VULN-0001.pending-human-approval.json"
+    path.write_bytes(content_bytes)
+
+    assert build_vuln_reports._read_json_dict_or_none(path) is None, (
+        f"_read_json_dict_or_none must return None (not raise) on {label}"
+    )
+
+
+def test_main_does_not_crash_when_a_kept_existing_report_lacks_filed_at(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cold-review FIX 5 (issue #64): if an existing, unapproved report on
+    disk matches freshly-derived content (ignoring filed_at) but is itself
+    missing the ``filed_at`` key entirely (hand-edited/corrupted), Layer 2
+    keeps it as-is (genuine no-op) -- the old code then did
+    ``written_body["filed_at"]`` for the summary print, which ``KeyError``s.
+    Must not crash; the summary should report it without a real timestamp.
+    """
+    monkeypatch.setattr(build_vuln_reports, "_REPORTS_DIR", tmp_path)
+
+    rc1 = build_vuln_reports.main()
+    assert rc1 == 0
+    written = sorted(tmp_path.iterdir())
+    assert written, "expected the three pending reports to be written"
+
+    target = written[0]
+    body = json.loads(target.read_text(encoding="utf-8"))
+    del body["filed_at"]
+    target.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+
+    rc2 = build_vuln_reports.main()
+    assert rc2 == 0, "main() must not crash when a kept existing report lacks filed_at"
