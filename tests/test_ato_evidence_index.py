@@ -185,25 +185,29 @@ def test_documentation_agent_docstring_does_not_claim_a_resolvable_exploit_db():
     )
 
 
-# --- Part C (issue #68 cold review): a filed report must not be claimed to
-# name/carry its own evidence or repro steps -------------------------------
+# --- Part C (issue #68 cold review, superseded by issue #77/P3.36) --------
 #
 # The first Part B fix replaced the "join key ... exploit DB" claim with two
 # NEW false claims: that the durable evidence is "named directly on each
-# report" (no report contains "evals/recordings" or "recording" -- the
-# report-to-recording mapping lives only in
+# report" (at the time, no report contained "evals/recordings" or
+# "recording" -- the report-to-recording mapping lived only in
 # docs/ATO_EVIDENCE_PACKET.md §5.2, not on the report itself), and that
 # observed/expected "already carry the repro steps a reader needs" (they
 # carry Judge.detect()'s detection signal -- a label/message string, not an
-# endpoint, payload, token, or case module). Both claims are checked
-# directly against the four committed reports below, not just guarded by
-# regex, so this test fails if a future edit reintroduces either claim OR
-# a report actually starts naming its own recording.
+# endpoint, payload, token, or case module).
+#
+# Issue #77 (P3.36) made the FIRST claim true on purpose: vuln_report.
+# schema.json gained an optional recording_ref property, and
+# build_vuln_report() now derives it from the source exploit record's
+# case_id and writes it onto every filed report -- so "a report names its
+# own evidence" is current, accurate documentation, not a false claim to be
+# guarded against. The repro-steps distinction is unaffected (observed/
+# expected still carry Judge.detect()'s detection signal, not runnable
+# steps) and remains checked below. What changed is which claim counts as
+# ground truth: this test now asserts every filed report DOES carry a
+# recording_ref (the positive of the old "must not name" tripwire), so a
+# future regression that silently drops the field is still caught.
 
-_SELF_NAMED_EVIDENCE_RE = re.compile(
-    r"evidence named directly on (each|the|its own) report",
-    re.IGNORECASE,
-)
 _UNQUALIFIED_REPRO_STEPS_RE = re.compile(
     r"carr(?:y|ies).{0,80}repro steps",
     re.IGNORECASE | re.DOTALL,
@@ -215,18 +219,9 @@ _NEGATION_NEARBY_RE = re.compile(
 _NEGATION_WINDOW = 60
 
 
-def test_documentation_agent_docstring_does_not_claim_reports_self_document_evidence():
+def test_documentation_agent_docstring_does_not_claim_unqualified_repro_steps():
     text = (REPO_ROOT / "redteam" / "agents" / "documentation.py").read_text(encoding="utf-8")
     normalized = " ".join(text.split())
-
-    self_named_violations = [m.group(0) for m in _SELF_NAMED_EVIDENCE_RE.finditer(normalized)]
-    assert not self_named_violations, (
-        "redteam/agents/documentation.py claims the durable evidence is "
-        "'named directly on each report' -- no report under "
-        "docs/vuln_reports/ contains 'evals/recordings' or 'recording' "
-        "(the schema forbids a recording_ref field entirely); the "
-        f"report-to-recording mapping lives only in ATO §5.2:\n{self_named_violations}"
-    )
 
     repro_steps_violations = _unqualified_claims(
         normalized, _UNQUALIFIED_REPRO_STEPS_RE, _NEGATION_NEARBY_RE, _NEGATION_WINDOW
@@ -240,15 +235,22 @@ def test_documentation_agent_docstring_does_not_claim_reports_self_document_evid
     )
 
 
-def test_filed_reports_do_not_name_their_own_recording():
-    """Ground-truth check backing the two regexes above: no committed
-    report actually contains a recording pointer, so any future claim that
-    it does is checkable against real files, not just docstring wording."""
+def test_filed_reports_name_their_own_recording():
+    """Ground-truth check for issue #77/P3.36: every committed, filed
+    report now DOES contain a recording pointer (recording_ref), so the
+    docstring's current claim that "a report names its own evidence" is
+    checkable against real files, not just docstring wording -- the
+    positive of the old (pre-#77) "must not name" tripwire this test
+    replaces. See tests/redteam/test_vuln_reports_filed.py for the fuller
+    check (schema-valid, resolves to an existing directory with a draw)."""
     reports_dir = REPO_ROOT / "docs" / "vuln_reports"
-    for report_path in sorted(reports_dir.glob("VULN-*.json")):
+    filed_reports = [
+        p for p in sorted(reports_dir.glob("VULN-*.json")) if not p.name.endswith(".pending-human-approval.json")
+    ]
+    assert filed_reports, f"expected at least one filed report under {reports_dir}"
+    for report_path in filed_reports:
         text = report_path.read_text(encoding="utf-8")
-        assert "evals/recordings" not in text and "recording" not in text.lower(), (
-            f"{report_path.name} now names its own recording -- update "
-            "redteam/agents/documentation.py's docstring, this claim is no "
-            "longer false"
+        assert "evals/recordings" in text, (
+            f"{report_path.name} does not name its own recording -- "
+            "expected a recording_ref pointing under evals/recordings/"
         )
