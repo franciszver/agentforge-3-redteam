@@ -631,3 +631,108 @@ def test_post_loop_action_log_export_includes_last_iterations_own_events(tmp_pat
     exported_event_types = {json.loads(line)["event_type"] for line in exported_lines}
     assert "exploit_recorded" in exported_event_types
     assert "vuln_report_filed" in exported_event_types
+
+
+# -- DO-NOT-MERGE cold review of PR #76, FIX 3 -------------------------------
+# "Documented flag combo aborts the run and loses the new export." Reproduced:
+# a second run against the same durable --reports-dir (no --db-path, so
+# exploit IDs restart at EXP-0001) collides on file_report's duplicate-report
+# guard, raises DocumentationAgentError from inside the loop, and -- because
+# the post-loop export sat after the loop with no try/finally -- the crashed
+# run's own action log (including the earlier, successful events from THIS
+# same run, before the crash) was never exported at all.
+
+
+def test_duplicate_report_filing_does_not_crash_the_campaign(tmp_path):
+    """A durable reports_dir reused across two runs with in-memory (default)
+    exploit numbering collides: run 2's freshly-generated EXP-0001 already
+    has a pending VULN-0001 report on disk from run 1.
+    ``documentation.file_report`` raises ``DocumentationAgentError`` for
+    that -- it must be caught and recorded as a signal, not crash the whole
+    autonomous run."""
+    recordings_dir = tmp_path / "recordings"
+    reports_dir = tmp_path / "vuln_reports"
+
+    def _run_once(action_log_ref: Path):
+        db = ExploitDB(":memory:")  # in-memory -- exploit IDs restart at EXP-0001
+        action_log = ActionLog(":memory:")
+        documentation = DocumentationAgent(reports_dir=reports_dir)  # durable
+        judge = JudgeAgent()
+        red_team = RedTeamAgent(model_client=_fake_model_client)
+        orchestrator = Orchestrator(no_findings_window=5)
+        return run_campaign(
+            orchestrator=orchestrator,
+            red_team=red_team,
+            judge=judge,
+            documentation=documentation,
+            db=db,
+            action_log=action_log,
+            action_log_ref=action_log_ref,
+            cases=[DOS_CASE, AUTHZ_CASE],
+            target_client=lambda attempt: _vulnerable_response(),
+            max_iterations=1,
+            recordings_dir=recordings_dir,
+            snapshot_fn=lambda: _full_coverage_snapshot("identity_authz"),
+        )
+
+    result1 = _run_once(tmp_path / "action_log_1.jsonl")
+    assert result1.exploit_ids == ["EXP-0001"]
+    assert len(result1.pending_reports) == 1
+
+    # Run 2: same reports_dir, exploit IDs restart at EXP-0001 -> collides
+    # with the pending VULN-0001 report run 1 left on disk.
+    result2 = _run_once(tmp_path / "action_log_2.jsonl")
+
+    assert result2.exploit_ids == ["EXP-0001"], "the exploit itself must still be recorded"
+    assert result2.pending_reports == [], "the colliding report must not be filed"
+    assert result2.filed_reports == []
+    filing_failed_signals = [s for s in result2.signals if s.get("error_type") == "vuln_report_filing_failed"]
+    assert len(filing_failed_signals) == 1
+    assert filing_failed_signals[0]["exploit_id"] == "EXP-0001"
+
+
+def test_action_log_exports_even_when_an_iteration_raises_uncaught(tmp_path):
+    """Belt-and-suspenders: even an exception NOT caught anywhere inside the
+    loop (e.g. a caller-injected ``snapshot_fn`` that itself raises -- no
+    typed component error, nothing this loop's own try/except blocks are
+    written to catch) must not prevent the post-loop export -- it must run
+    from a ``finally``, not merely "after the loop" (which an uncaught
+    exception skips entirely, per Python control flow)."""
+    recordings_dir = tmp_path / "recordings"
+    db, action_log, documentation, judge, red_team, orchestrator = _new_agents(recordings_dir)
+    action_log_ref = tmp_path / "action_log.jsonl"
+
+    # Emit one real event before the fatal snapshot call, via a snapshot_fn
+    # that raises on its SECOND call -- so there is something in
+    # ``action_log`` to prove got exported despite the eventual crash.
+    calls = {"n": 0}
+
+    def _snapshot_then_boom():
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("simulated unforeseen failure, not one of the typed component errors")
+        return _full_coverage_snapshot("identity_authz")
+
+    with pytest.raises(RuntimeError, match="simulated unforeseen failure"):
+        run_campaign(
+            orchestrator=orchestrator,
+            red_team=red_team,
+            judge=judge,
+            documentation=documentation,
+            db=db,
+            action_log=action_log,
+            action_log_ref=action_log_ref,
+            cases=[DOS_CASE, AUTHZ_CASE],
+            target_client=lambda attempt: _vulnerable_response(),
+            max_iterations=2,
+            recordings_dir=recordings_dir,
+            snapshot_fn=_snapshot_then_boom,
+        )
+
+    assert action_log_ref.exists(), (
+        "the action log must still be exported even when an iteration raises "
+        "an exception the loop itself does not catch"
+    )
+    exported_lines = action_log_ref.read_text(encoding="utf-8").splitlines()
+    exported_event_types = {json.loads(line)["event_type"] for line in exported_lines}
+    assert "attempt_generated" in exported_event_types

@@ -167,9 +167,21 @@ def test_never_auto_approves_no_default_exploit_id(tmp_path):
     combination that approves anything without an explicit exploit_id, and
     a bare run (no --approve/--list-pending) never touches approve() at
     all."""
-    args = run_campaign._parse_args(["--reports-dir", str(tmp_path)])
+    args = run_campaign._parse_args(
+        ["--reports-dir", str(tmp_path), "--db-path", str(tmp_path / "exploits.sqlite3")]
+    )
     assert args.approve is None
     assert args.list_pending is False
+
+
+def test_run_mode_reports_dir_without_db_path_refuses_to_start(tmp_path):
+    """FIX 3 (documented flag combo aborts the run): --reports-dir without
+    --db-path in run mode used to only print a stderr NOTE and continue --
+    then crash the campaign mid-loop (losing the action-log export) the
+    first time exploit-ID numbering collided with an already-persisted
+    report on a second run. It must now refuse to start at all."""
+    with pytest.raises(SystemExit):
+        run_campaign._parse_args(["--reports-dir", str(tmp_path)])
 
 
 # -- DO-NOT-MERGE cold review of PR #76, FIX 2 -------------------------------

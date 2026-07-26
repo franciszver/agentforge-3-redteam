@@ -102,7 +102,7 @@ from typing import Any, Callable, Mapping, Sequence
 from evals.runner import DEFAULT_CONTAINER, DEFAULT_TIMEOUT_S, ParsedResponse, drive_chat, record_run
 from evals.schema import AttackCase
 
-from redteam.agents.documentation import FORCE_HUMAN_GATE_CATEGORIES, DocumentationAgent
+from redteam.agents.documentation import FORCE_HUMAN_GATE_CATEGORIES, DocumentationAgent, DocumentationAgentError
 from redteam.agents.judge import JudgeAgent, JudgeDriftSuspectedError, JudgeTimeoutError
 from redteam.agents.orchestrator import BudgetExceededError, NoFindingsInWindowError, Orchestrator
 from redteam.agents.red_team import RedTeamAgent, RedTeamAgentError
@@ -243,252 +243,277 @@ def run_campaign(
 
     result = CampaignResult(iterations_run=0, stopped_reason="max_iterations")
 
-    for _ in range(max_iterations):
-        result.iterations_run += 1
+    try:
+        for _ in range(max_iterations):
+            result.iterations_run += 1
 
-        snapshot = build_snapshot()
-        action_log.append(agent="observability", event_type="snapshot_emitted", details=snapshot)
+            snapshot = build_snapshot()
+            action_log.append(agent="observability", event_type="snapshot_emitted", details=snapshot)
 
-        # -- 1. Orchestrator: next attack_directive -------------------------
-        try:
-            directive = orchestrator.next_directive(
-                snapshot, verdicts=result.verdicts, cases=cases, db=db, vuln_reports=all_vuln_reports
-            )
-        except BudgetExceededError as exc:
-            action_log.append(agent="orchestrator", event_type="budget_exceeded", details=exc.error)
-            result.signals.append(dict(exc.error))
-            result.stopped_reason = "budget_exceeded"
-            break
-        except NoFindingsInWindowError as exc:
+            # -- 1. Orchestrator: next attack_directive -------------------------
+            try:
+                directive = orchestrator.next_directive(
+                    snapshot, verdicts=result.verdicts, cases=cases, db=db, vuln_reports=all_vuln_reports
+                )
+            except BudgetExceededError as exc:
+                action_log.append(agent="orchestrator", event_type="budget_exceeded", details=exc.error)
+                result.signals.append(dict(exc.error))
+                result.stopped_reason = "budget_exceeded"
+                break
+            except NoFindingsInWindowError as exc:
+                action_log.append(
+                    agent="orchestrator",
+                    event_type="no_findings_in_window",
+                    category=exc.error.get("category"),
+                    details=exc.error,
+                )
+                result.signals.append(dict(exc.error))
+                continue
+
+            result.directives.append(directive)
             action_log.append(
                 agent="orchestrator",
-                event_type="no_findings_in_window",
-                category=exc.error.get("category"),
-                details=exc.error,
+                event_type="directive_issued",
+                category=directive["category"],
+                details=directive,
             )
-            result.signals.append(dict(exc.error))
-            continue
 
-        result.directives.append(directive)
-        action_log.append(
-            agent="orchestrator",
-            event_type="directive_issued",
-            category=directive["category"],
-            details=directive,
-        )
+            # -- 2. Red Team: generate one attack_attempt -----------------------
+            selector = directive["next_case"]["selector"]
+            prior_attempt = None
+            if selector == "mutation_of":
+                prior_attempt = attempts_by_id.get(directive["next_case"]["mutation_of"])
+                if prior_attempt is None:
+                    action_log.append(
+                        agent="harness",
+                        event_type="mutation_source_missing",
+                        category=directive["category"],
+                        details={"mutation_of": directive["next_case"]["mutation_of"]},
+                    )
+                    continue
 
-        # -- 2. Red Team: generate one attack_attempt -----------------------
-        selector = directive["next_case"]["selector"]
-        prior_attempt = None
-        if selector == "mutation_of":
-            prior_attempt = attempts_by_id.get(directive["next_case"]["mutation_of"])
-            if prior_attempt is None:
+            try:
+                attempt = red_team.generate_attempt(directive, prior_attempt=prior_attempt, bearer_token=bearer_token)
+            except RedTeamAgentError as exc:
+                # A generation failure (e.g. the model returned an empty
+                # completion -- red_team.py's module docstring documents this
+                # as a real possibility live) must not crash the whole
+                # autonomous run over one bad draw; skip this iteration.
+                action_log.append(
+                    agent="red_team",
+                    event_type="attempt_generation_failed",
+                    category=directive["category"],
+                    details={"message": str(exc)},
+                )
+                result.signals.append({"error_type": "attempt_generation_failed", "message": str(exc)})
+                continue
+            attempts_by_id[attempt["attempt_id"]] = attempt
+            result.attempts.append(attempt)
+            action_log.append(
+                agent="red_team",
+                event_type="attempt_generated",
+                case_id=attempt["case_id"],
+                category=attempt["category"],
+                details=attempt,
+            )
+
+            # -- 3. Drive the target ---------------------------------------------
+            try:
+                response = target_client(attempt)
+            except Exception as exc:  # noqa: BLE001 - a hostile/unreachable target must not crash the loop
                 action_log.append(
                     agent="harness",
-                    event_type="mutation_source_missing",
-                    category=directive["category"],
-                    details={"mutation_of": directive["next_case"]["mutation_of"]},
+                    event_type="target_unreachable",
+                    case_id=attempt["case_id"],
+                    category=attempt["category"],
+                    details={"attempted_at": now_iso(), "message": str(exc)},
+                )
+                result.signals.append(
+                    {
+                        "error_type": "target_unreachable",
+                        "message": str(exc),
+                        "attempted_at": now_iso(),
+                        "attempt_id": attempt["attempt_id"],
+                    }
                 )
                 continue
 
-        try:
-            attempt = red_team.generate_attempt(directive, prior_attempt=prior_attempt, bearer_token=bearer_token)
-        except RedTeamAgentError as exc:
-            # A generation failure (e.g. the model returned an empty
-            # completion -- red_team.py's module docstring documents this
-            # as a real possibility live) must not crash the whole
-            # autonomous run over one bad draw; skip this iteration.
-            action_log.append(
-                agent="red_team",
-                event_type="attempt_generation_failed",
-                category=directive["category"],
-                details={"message": str(exc)},
-            )
-            result.signals.append({"error_type": "attempt_generation_failed", "message": str(exc)})
-            continue
-        attempts_by_id[attempt["attempt_id"]] = attempt
-        result.attempts.append(attempt)
-        action_log.append(
-            agent="red_team",
-            event_type="attempt_generated",
-            case_id=attempt["case_id"],
-            category=attempt["category"],
-            details=attempt,
-        )
-
-        # -- 3. Drive the target ---------------------------------------------
-        try:
-            response = target_client(attempt)
-        except Exception as exc:  # noqa: BLE001 - a hostile/unreachable target must not crash the loop
-            action_log.append(
-                agent="harness",
-                event_type="target_unreachable",
-                case_id=attempt["case_id"],
-                category=attempt["category"],
-                details={"attempted_at": now_iso(), "message": str(exc)},
-            )
-            result.signals.append(
-                {
-                    "error_type": "target_unreachable",
-                    "message": str(exc),
-                    "attempted_at": now_iso(),
-                    "attempt_id": attempt["attempt_id"],
-                }
-            )
-            continue
-
-        # -- 4. Judge: score the response ------------------------------------
-        case = cases_by_category.get(attempt["category"])
-        if case is None:
-            action_log.append(
-                agent="harness",
-                event_type="no_case_for_category",
-                case_id=attempt["case_id"],
-                category=attempt["category"],
-                details={"attempt_id": attempt["attempt_id"]},
-            )
-            continue
-
-        try:
-            verdict = judge.score(case, response, attempt_id=attempt["attempt_id"])
-        except JudgeTimeoutError as exc:
-            action_log.append(
-                agent="judge",
-                event_type="judge_timeout",
-                case_id=case.id,
-                category=attempt["category"],
-                details=exc.error,
-            )
-            result.signals.append(dict(exc.error))
-            continue
-
-        result.verdicts.append(verdict)
-        action_log.append(
-            agent="judge",
-            event_type="verdict_scored",
-            case_id=verdict["case_id"],
-            category=attempt["category"],
-            details=verdict,
-        )
-
-        # -- 5. Store confirmed exploits (unconditionally) + document ---------
-        # A confirmed ("success"/"regression") outcome is ALWAYS recorded --
-        # ``record_run`` and ``db.add_record`` below run for every confirmed
-        # outcome, full stop. A red-team platform must never destroy the
-        # only copy of a target's raw response. Whether
-        # ``documentation.file_report`` auto-files or gates for human
-        # approval is a SEPARATE, later decision (below) that never touches
-        # this write. The Judge's own scoring/drift-detection integrity stays
-        # untouched either way -- `verdict` above still reflects the case's
-        # honest, unmodified `detect` output, and this step never feeds back
-        # into `JudgeAgent.score`/`map_outcome`/`check_drift` (ARCHITECTURE.md
-        # §6's gold-probe drift baseline scores against `JudgeAgent.score`
-        # alone).
-        outcome_confirmed = verdict["outcome"] in ("success", "regression")
-        if outcome_confirmed:
-            recording_path = record_run(
-                attempt["case_id"],
-                attempt["draw_number"],
-                response,
-                verdict["evidence"].get("detection_label", ""),
-                True,
-                recordings_dir=recordings_dir,
-            )
-            exploit_id = db.next_exploit_id()
-            record = {
-                "schema_version": "1.0.0",
-                "exploit_id": exploit_id,
-                "case_id": verdict["case_id"],
-                "attempt_id": verdict["attempt_id"],
-                "verdict_id": verdict["verdict_id"],
-                "category": attempt["category"],
-                "source": "judge",
-                "confirmed_at": verdict["scored_at"],
-                "minimal_repro": _minimal_repro(attempt, verdict),
-                "recording_ref": str(recording_path),
-            }
-            db.add_record(record)
-            result.exploit_ids.append(exploit_id)
-            action_log.append(
-                agent="harness",
-                event_type="exploit_recorded",
-                case_id=record["case_id"],
-                category=record["category"],
-                details=record,
-            )
-
-            # Category-level human-approval gate (issue #55): ``denial_of_service``
-            # is not reliably machine-decidable -- ``dos_input_bound.detect``
-            # structurally cannot distinguish "guard absent" from "guard
-            # fired then fail-soft-swallowed" for a 200-with-an-`answer`
-            # (see that module's "STRUCTURAL BLIND SPOT" comment). Rather
-            # than suppressing the report (unreachable in the live loop --
-            # ``Orchestrator._pick_next_case`` never emits ``case_id``, so a
-            # message-match predicate against one documented probe never
-            # fires outside a deliberate replay), every CONFIRMED outcome in
-            # this category is filed but forced through the same
-            # human-approval gate a critical-severity finding uses
-            # (``DocumentationAgent.file_report(..., force_human_gate=True)``)
-            # -- surfaced for triage, never silently dropped or auto-published.
-            # This applies category-wide (novel payloads included), not
-            # narrowed to one exact probe message; no other category's
-            # gating is affected.
-            report = documentation.file_report(
-                record, force_human_gate=attempt["category"] in FORCE_HUMAN_GATE_CATEGORIES
-            )
-            if report["status"] == "pending_human_approval":
-                result.pending_reports.append(report)
-                action_log.append(
-                    agent="documentation",
-                    event_type="vuln_report_pending_human_approval",
-                    category=record["category"],
-                    details=report,
-                )
-            else:
-                result.filed_reports.append(report)
-                action_log.append(
-                    agent="documentation",
-                    event_type="vuln_report_filed",
-                    category=record["category"],
-                    details=report,
-                )
-            all_vuln_reports.append(report)
-
-        # -- 6. Regression sweep (only on caller-named iterations) -----------
-        if result.iterations_run in regression_sweep_at:
-            regressions = orchestrator.trigger_regression_sweep(
-                db, cases, status_transition_occurred=True, recordings_dir=recordings_dir
-            )
-            for regression in regressions:
+            # -- 4. Judge: score the response ------------------------------------
+            case = cases_by_category.get(attempt["category"])
+            if case is None:
                 action_log.append(
                     agent="harness",
-                    event_type="regression_detected",
-                    category=regression["category"],
-                    details=regression,
+                    event_type="no_case_for_category",
+                    case_id=attempt["case_id"],
+                    category=attempt["category"],
+                    details={"attempt_id": attempt["attempt_id"]},
                 )
-                result.signals.append(dict(regression))
+                continue
 
-        # -- 7. Drift sweep (only on caller-named cadence) --------------------
-        if drift_check_every and result.iterations_run % drift_check_every == 0:
             try:
-                judge.check_drift()
-            except JudgeDriftSuspectedError as exc:
-                action_log.append(agent="judge", event_type="judge_drift_suspected", details=exc.error)
-                result.signals.append({"error_type": "judge_drift_suspected", **exc.error})
+                verdict = judge.score(case, response, attempt_id=attempt["attempt_id"])
+            except JudgeTimeoutError as exc:
+                action_log.append(
+                    agent="judge",
+                    event_type="judge_timeout",
+                    case_id=case.id,
+                    category=attempt["category"],
+                    details=exc.error,
+                )
+                result.signals.append(dict(exc.error))
+                continue
 
-    # Post-loop export (issue #63): ``emit_snapshot`` (called at the TOP of
-    # each iteration, in the default ``snapshot_fn`` path) is the only place
-    # that calls ``action_log.export_jsonl`` -- so every event appended
-    # AFTER that iteration's own snapshot call (directive_issued through
-    # vuln_report_filed/pending, regression/drift signals) never reached
-    # ``action_log_ref`` for the LAST iteration a run makes. For
-    # ``max_iterations=1`` that is every event the run produced. Exporting
-    # here, unconditionally, after the loop (whether it ran to
-    # ``max_iterations`` or broke early on ``budget_exceeded``) guarantees a
-    # run's own events are never lost, regardless of whether the caller
-    # injected a fake ``snapshot_fn`` (as every deterministic test in
-    # ``tests/redteam/test_campaign.py`` does) that never touches
-    # ``action_log_ref`` at all.
-    action_log.export_jsonl(action_log_ref)
+            result.verdicts.append(verdict)
+            action_log.append(
+                agent="judge",
+                event_type="verdict_scored",
+                case_id=verdict["case_id"],
+                category=attempt["category"],
+                details=verdict,
+            )
+
+            # -- 5. Store confirmed exploits (unconditionally) + document ---------
+            # A confirmed ("success"/"regression") outcome is ALWAYS recorded --
+            # ``record_run`` and ``db.add_record`` below run for every confirmed
+            # outcome, full stop. A red-team platform must never destroy the
+            # only copy of a target's raw response. Whether
+            # ``documentation.file_report`` auto-files or gates for human
+            # approval is a SEPARATE, later decision (below) that never touches
+            # this write. The Judge's own scoring/drift-detection integrity stays
+            # untouched either way -- `verdict` above still reflects the case's
+            # honest, unmodified `detect` output, and this step never feeds back
+            # into `JudgeAgent.score`/`map_outcome`/`check_drift` (ARCHITECTURE.md
+            # §6's gold-probe drift baseline scores against `JudgeAgent.score`
+            # alone).
+            outcome_confirmed = verdict["outcome"] in ("success", "regression")
+            if outcome_confirmed:
+                recording_path = record_run(
+                    attempt["case_id"],
+                    attempt["draw_number"],
+                    response,
+                    verdict["evidence"].get("detection_label", ""),
+                    True,
+                    recordings_dir=recordings_dir,
+                )
+                exploit_id = db.next_exploit_id()
+                record = {
+                    "schema_version": "1.0.0",
+                    "exploit_id": exploit_id,
+                    "case_id": verdict["case_id"],
+                    "attempt_id": verdict["attempt_id"],
+                    "verdict_id": verdict["verdict_id"],
+                    "category": attempt["category"],
+                    "source": "judge",
+                    "confirmed_at": verdict["scored_at"],
+                    "minimal_repro": _minimal_repro(attempt, verdict),
+                    "recording_ref": str(recording_path),
+                }
+                db.add_record(record)
+                result.exploit_ids.append(exploit_id)
+                action_log.append(
+                    agent="harness",
+                    event_type="exploit_recorded",
+                    case_id=record["case_id"],
+                    category=record["category"],
+                    details=record,
+                )
+
+                # Category-level human-approval gate (issue #55): ``denial_of_service``
+                # is not reliably machine-decidable -- ``dos_input_bound.detect``
+                # structurally cannot distinguish "guard absent" from "guard
+                # fired then fail-soft-swallowed" for a 200-with-an-`answer`
+                # (see that module's "STRUCTURAL BLIND SPOT" comment). Rather
+                # than suppressing the report (unreachable in the live loop --
+                # ``Orchestrator._pick_next_case`` never emits ``case_id``, so a
+                # message-match predicate against one documented probe never
+                # fires outside a deliberate replay), every CONFIRMED outcome in
+                # this category is filed but forced through the same
+                # human-approval gate a critical-severity finding uses
+                # (``DocumentationAgent.file_report(..., force_human_gate=True)``)
+                # -- surfaced for triage, never silently dropped or auto-published.
+                # This applies category-wide (novel payloads included), not
+                # narrowed to one exact probe message; no other category's
+                # gating is affected.
+                # Cold-review fix (this PR, FIX 3): wrapped like every sibling
+                # component call in this loop (orchestrator/red_team/target_client/
+                # judge above) -- a rejected filing (e.g. a duplicate report for
+                # this exploit_id, which is reachable in practice against a
+                # durable ``--reports-dir`` reused across runs) must not crash
+                # the whole autonomous campaign mid-loop. Record the signal and
+                # move on; the confirmed exploit is still safely in ``db``
+                # (step 5's ``db.add_record`` above already ran, unconditionally,
+                # before this call).
+                try:
+                    report = documentation.file_report(
+                        record, force_human_gate=attempt["category"] in FORCE_HUMAN_GATE_CATEGORIES
+                    )
+                except DocumentationAgentError as exc:
+                    action_log.append(
+                        agent="documentation",
+                        event_type="vuln_report_filing_failed",
+                        case_id=record["case_id"],
+                        category=record["category"],
+                        details={"message": str(exc), "exploit_id": exploit_id},
+                    )
+                    result.signals.append(
+                        {"error_type": "vuln_report_filing_failed", "message": str(exc), "exploit_id": exploit_id}
+                    )
+                    continue
+                if report["status"] == "pending_human_approval":
+                    result.pending_reports.append(report)
+                    action_log.append(
+                        agent="documentation",
+                        event_type="vuln_report_pending_human_approval",
+                        category=record["category"],
+                        details=report,
+                    )
+                else:
+                    result.filed_reports.append(report)
+                    action_log.append(
+                        agent="documentation",
+                        event_type="vuln_report_filed",
+                        category=record["category"],
+                        details=report,
+                    )
+                all_vuln_reports.append(report)
+
+            # -- 6. Regression sweep (only on caller-named iterations) -----------
+            if result.iterations_run in regression_sweep_at:
+                regressions = orchestrator.trigger_regression_sweep(
+                    db, cases, status_transition_occurred=True, recordings_dir=recordings_dir
+                )
+                for regression in regressions:
+                    action_log.append(
+                        agent="harness",
+                        event_type="regression_detected",
+                        category=regression["category"],
+                        details=regression,
+                    )
+                    result.signals.append(dict(regression))
+
+            # -- 7. Drift sweep (only on caller-named cadence) --------------------
+            if drift_check_every and result.iterations_run % drift_check_every == 0:
+                try:
+                    judge.check_drift()
+                except JudgeDriftSuspectedError as exc:
+                    action_log.append(agent="judge", event_type="judge_drift_suspected", details=exc.error)
+                    result.signals.append({"error_type": "judge_drift_suspected", **exc.error})
+
+    finally:
+        # Post-loop export (issue #63): ``emit_snapshot`` (called at the TOP of
+        # each iteration, in the default ``snapshot_fn`` path) is the only place
+        # that calls ``action_log.export_jsonl`` -- so every event appended
+        # AFTER that iteration's own snapshot call (directive_issued through
+        # vuln_report_filed/pending, regression/drift signals) never reached
+        # ``action_log_ref`` for the LAST iteration a run makes. For
+        # ``max_iterations=1`` that is every event the run produced. Exporting
+        # here, unconditionally, in a ``finally`` (cold-review fix, this PR)
+        # guarantees a run's own events are never lost -- whether the loop ran
+        # to ``max_iterations``, broke early on ``budget_exceeded``, or an
+        # iteration raised an exception the loop itself doesn't catch -- and
+        # regardless of whether the caller injected a fake ``snapshot_fn`` (as
+        # every deterministic test in ``tests/redteam/test_campaign.py`` does)
+        # that never touches ``action_log_ref`` at all.
+        action_log.export_jsonl(action_log_ref)
 
     return result

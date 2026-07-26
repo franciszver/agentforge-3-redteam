@@ -40,11 +40,15 @@ the in-memory defaults.
 
 Pass ``--reports-dir PATH`` to persist vuln reports (filed AND pending)
 durably, and ``--db-path PATH`` to persist the exploit DB durably (a
-sqlite file, not ``:memory:``) -- **pair the two** if you want exploit IDs
-to keep incrementing correctly across runs; ``--reports-dir`` alone with
-the in-memory (default) db restarts exploit numbering at ``EXP-0001`` on
-every invocation and will collide with (and refuse to re-file over) an
-already-persisted report for that same id.
+sqlite file, not ``:memory:``) -- **pair the two**: exploit IDs must keep
+incrementing correctly across runs for a durable ``--reports-dir`` to work
+at all. ``--reports-dir`` without ``--db-path`` in ``run`` mode is refused
+at startup (cold-review fix, this PR) -- it used to be a mere stderr NOTE,
+but the in-memory (default) db restarts exploit numbering at ``EXP-0001``
+on every invocation, which collides with (and previously crashed the whole
+campaign mid-loop on, via an uncaught ``DocumentationAgentError`` from
+``file_report``) an already-persisted report for that same id on any
+second run against the same ``--reports-dir``.
 
 ## Approving a durably-pending report (issue #63/#66; hardened, cold-review of PR #76)
 
@@ -180,6 +184,19 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "--approve requires --db-path PATH for the field-for-field cross-check "
             "against the source exploit record, or --unverified-i-vouch-without-db-check "
             "to explicitly approve without one"
+        )
+    # Cold-review fix (this PR, FIX 3): `run` mode (neither --list-pending nor
+    # --approve) with --reports-dir but no --db-path used to only print a
+    # stderr NOTE and continue -- but exploit IDs then restart at EXP-0001
+    # every run, which collides with (and raises DocumentationAgentError for)
+    # an already-persisted report under --reports-dir, killing the campaign
+    # mid-loop the very first time it re-runs against a durable reports_dir.
+    # Refuse to start instead of documenting a footgun as a mere NOTE.
+    if not args.list_pending and args.approve is None and args.reports_dir is not None and args.db_path is None:
+        parser.error(
+            "--reports-dir without --db-path restarts exploit IDs at EXP-0001 every run "
+            "and will collide with an already-persisted report under --reports-dir on any "
+            "second run -- pass --db-path PATH too for a fully durable run"
         )
     return args
 
@@ -325,13 +342,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             "it durably, then later run --approve EXPLOIT_ID --reports-dir PATH to approve it.",
             file=sys.stderr,
         )
-    elif str(db_path) == ":memory:":
-        print(
-            "NOTE: --reports-dir is set but --db-path is not -- exploit IDs restart at "
-            "EXP-0001 every run and may collide with an already-persisted report under "
-            "--reports-dir. Pass --db-path PATH too for a fully durable run.",
-            file=sys.stderr,
-        )
+    # (--reports-dir without --db-path is refused at argparse time, above --
+    # see _parse_args's "FIX 3" comment -- so no db_path==':memory:' NOTE
+    # branch is reachable here anymore.)
 
     # A scratch path -- deliberately NOT under evals/recordings/ (that
     # directory is committed replay evidence, not a scratch/log dir; a live
