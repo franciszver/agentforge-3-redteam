@@ -144,12 +144,18 @@ def _is_approved(path: Path) -> bool:
     fails closed as "approved" rather than being treated as safe to
     overwrite. Any read/parse failure is likewise treated as "approved" --
     a file this script can't understand must not be silently clobbered
-    either; ``main`` refuses and names it instead."""
+    either; ``main`` refuses and names it instead. This includes: an
+    unreadable file or bad encoding (``OSError``, ``UnicodeDecodeError`` --
+    the latter is a ``ValueError`` subclass), malformed JSON
+    (``json.JSONDecodeError``, also a ``ValueError`` subclass), and
+    syntactically valid JSON that isn't an object -- ``[]``, ``null``,
+    ``"x"`` -- which has no ``.get`` and would otherwise raise
+    ``AttributeError`` instead of failing closed."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        return bool(data.get("approved_by")) or bool(data.get("approved_at"))
+    except (OSError, ValueError, AttributeError):
         return True
-    return bool(data.get("approved_by")) or bool(data.get("approved_at"))
 
 
 def _without_filed_at(body: Mapping[str, Any]) -> dict[str, Any]:

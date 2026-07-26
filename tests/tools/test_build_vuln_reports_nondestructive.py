@@ -209,3 +209,49 @@ def test_cli_out_dir_lets_a_reader_regenerate_into_a_scratch_directory(tmp_path:
     assert written == ["VULN-0001.pending-human-approval.json", "VULN-0002.pending-human-approval.json", "VULN-0003.pending-human-approval.json"], (
         f"expected the three pending reports written into --out-dir {tmp_path}, found: {written}"
     )
+
+
+@pytest.mark.parametrize(
+    "content_bytes, label",
+    [
+        (b"[]", "valid JSON but a list, not an object"),
+        (b"null", "valid JSON but null, not an object"),
+        (b'"x"', "valid JSON but a bare string, not an object"),
+        (b"\xff\xfe\x00\xff", "invalid UTF-8 -- UnicodeDecodeError"),
+    ],
+)
+def test_is_approved_fails_closed_on_malformed_content_it_cannot_understand(
+    tmp_path: Path, content_bytes: bytes, label: str
+) -> None:
+    """Cold-review FIX 4 (issue #64): ``_is_approved``'s docstring promises
+    that ANY read/parse failure is treated as "approved" (fail closed), with
+    ``main`` refusing and NAMING the file rather than crashing. Pre-fix, the
+    ``except (OSError, json.JSONDecodeError)`` clause missed two classes the
+    reviewer reproduced: syntactically-valid-JSON-but-not-a-dict (``[]``,
+    ``null``, ``"x"`` -- raises ``AttributeError`` on ``.get``) and invalid
+    UTF-8 (raises ``UnicodeDecodeError``, a ``ValueError`` subclass, from
+    ``path.read_text``). Both used to escape the except clause and crash
+    with a traceback instead of returning ``True``.
+    """
+    path = tmp_path / "VULN-0001.json"
+    path.write_bytes(content_bytes)
+
+    assert build_vuln_reports._is_approved(path) is True, (
+        f"_is_approved must fail closed (return True) on {label}, not raise"
+    )
+
+
+def test_main_refuses_and_names_the_file_when_it_cannot_be_understood(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end version of FIX 4: a report ``main()`` can't parse (here,
+    invalid UTF-8) must produce the documented named-file refusal (rc != 0,
+    stderr names the file), not an unhandled traceback.
+    """
+    path = tmp_path / "VULN-0001.json"
+    path.write_bytes(b"\xff\xfe\x00\xff")
+
+    monkeypatch.setattr(build_vuln_reports, "_REPORTS_DIR", tmp_path)
+    rc = build_vuln_reports.main()
+
+    assert rc != 0, "main() must refuse (not crash) when a report can't be parsed"
