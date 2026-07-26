@@ -546,6 +546,41 @@ def test_recording_ref_derives_correctly_when_recordings_dir_is_a_scratch_tempdi
     )
 
 
+def test_recording_ref_derivation_rejects_a_directory_ref_with_trailing_slash():
+    """Issue #79 FIX 1: redteam/harness/suite.py:59 constructs
+    ReplayAttempt.recording_ref as f"evals/recordings/{case.id}/" -- a
+    DIRECTORY, not a file. Before this fix, parts[-2] silently walked up
+    one level from the (nonexistent) empty trailing segment and produced
+    the schema-VALID but WRONG 'evals/recordings/recordings/' -- a report
+    naming a directory that isn't its evidence. A non-file input must fail
+    loudly instead."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "evals/recordings/identity-authz-garbage-bearer-token/"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
+def test_recording_ref_derivation_rejects_a_directory_ref_without_trailing_slash():
+    """Same directory-shaped input as above but without the trailing slash
+    -- the last segment still isn't a .json file, so it must also be
+    rejected rather than silently treated as a filename."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "evals/recordings/identity-authz-garbage-bearer-token"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
+def test_recording_ref_derivation_rejects_a_dotdot_segment():
+    """Issue #79 FIX 1: a '..' path segment lets parts[-2] silently point
+    at a directory that is not the file's true immediate parent (e.g.
+    'evals/recordings/../secrets/d.json' -> 'evals/recordings/secrets/').
+    Must fail loudly rather than derive a misdirected report recording_ref."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = "evals/recordings/../secrets/d.json"
+    with pytest.raises(DocumentationAgentError):
+        build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
 def test_all_categories_map_to_a_valid_severity_and_pass_schema():
     for category in (
         "prompt_injection",
