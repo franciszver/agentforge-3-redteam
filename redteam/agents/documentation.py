@@ -79,10 +79,30 @@ artifact.
 ``steps``/``recording_ref`` field -- ``observed``/``expected`` are copied
 verbatim from the exploit record's ``minimal_repro`` onto the report, and
 the report's own ``exploit_id`` is the join key back to the full
-``ExploitRecord`` (its ``minimal_repro.steps`` and ``recording_ref``) in the
-exploit DB. That is what makes a filed report "reproducible by an engineer
-with zero platform context": the report names the impact and the fix, the
-linked exploit record holds the exact repro steps and replayable evidence.
+``ExploitRecord`` (its ``minimal_repro.steps`` and ``recording_ref``) that
+produced it. **This join key is in-process only** -- ``ExploitDB`` is
+sqlite-backed but every report-builder in this repo constructs
+``DocumentationAgent(reports_dir=None)`` (``tools/build_vuln_reports.py``,
+``tools/build_vuln_report_p3_54.py``, ``tools/load_test_replay.py``,
+``tools/run_campaign.py``) and none calls ``ExploitDB.add_record`` against
+a committed, on-disk database, so there is no persisted exploit DB an
+``EXP-000N`` reader can open and query; ``:memory:`` is
+``ExploitDB``'s own default (``redteam/harness/db.py``). What makes a
+filed report reproducible by an engineer with zero platform context is
+NOT the ``exploit_id`` resolving to a committed database -- it is the
+durable, already-committed evidence under ``evals/recordings/<probe-name>/``.
+**No report names its own evidence** -- ``vuln_report.schema.json`` is
+``additionalProperties: false`` with no ``recording_ref`` field (see
+above), so a filed ``docs/vuln_reports/<report_id>.json`` cannot and does
+not point at its recording; that report-to-recording mapping lives ONLY
+in ``docs/ATO_EVIDENCE_PACKET.md`` §5.2, which a reader must consult
+separately. Nor do ``observed``/``expected`` carry repro steps -- they
+carry the *detection signal* ``Judge.detect()`` produced (e.g.
+``"detect() returned vulnerable=True, label='garbage_token_accepted'"``),
+not an endpoint, payload, token, or case module; the actual runnable
+repro is the paired ``evals/cases/<case>.py`` detection logic plus the
+committed recording JSON under ``evals/recordings/<probe-name>/`` that
+§5.2 maps the report to.
 """
 
 from __future__ import annotations

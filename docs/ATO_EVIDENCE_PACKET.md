@@ -326,9 +326,9 @@ explicitly documented as an arbitrary placeholder accepted by the target's
 own insecure-by-default validator (VULN-0001) — "safe to publish as-is" per
 that document's own text, not a real credential.
 
-`pytest tests/ -q` re-run for this packet: **340 passed** with the sibling
+`pytest tests/ -q` re-run for this packet: **346 passed** with the sibling
 Phase 2 checkout (`../agentforge-2-evidence-agent`, pinned `v2.0.0`)
-present locally (confirmed at PR time); **234 passed, 106 skipped** in CI
+present locally (confirmed at PR time); **240 passed, 106 skipped** in CI
 and for anyone without that sibling — CI (`.github/workflows/ci.yml`) does
 not check it out, so the 100 total sibling-checkout citation cases
 class-skip cleanly there: 40 `TestTraceCitationsAgainstPinnedTarget` cases
@@ -373,7 +373,7 @@ those changes included, not a pre-change baseline.
   evidence the project has previously demonstrated this discipline under
   pressure, not as a claim about this PR's own diff (which touches no
   secret-adjacent files).
-- **340 passing tests (234 passed, 106 skipped in CI), no live/network/GPU
+- **346 passing tests (240 passed, 106 skipped in CI), no live/network/GPU
   call in the default suite.** Every test file under `tests/`
   (`tests/contracts/`, `tests/redteam/`, `tests/test_cases.py`,
   `tests/test_case_sourceref_relevance.py`, `tests/test_runner_sse.py`,
@@ -395,18 +395,18 @@ those changes included, not a pre-change baseline.
   has moved across PRs that touch test-suite-relevant code (e.g. PR #40's
   own test plan: "177 passed (unchanged; no test-suite-relevant code
   touched)" at that point in the repo's history; this PR's own platform
-  changes plus its expanded citation-verification test set move it to 340
-  with the sibling checkout present, or 234 passed / 106 skipped without
+  changes plus its expanded citation-verification test set move it to 346
+  with the sibling checkout present, or 240 passed / 106 skipped without
   it, §5.1).
 
 ---
 
 ## 5. Eval-result evidence
 
-### 5.1 The 340-test suite (234 in CI)
+### 5.1 The 346-test suite (240 in CI)
 
-`pytest tests/ -q` → **340 passed** with the sibling Phase 2 checkout
-present, re-confirmed for this packet (§4.1); **234 passed, 106 skipped**
+`pytest tests/ -q` → **346 passed** with the sibling Phase 2 checkout
+present, re-confirmed for this packet (§4.1); **240 passed, 106 skipped**
 in CI (`.github/workflows/ci.yml` does not check out the sibling target)
 and for any clone lacking it. Organized across `tests/contracts/` (schema
 + uniqueness constraints), `tests/redteam/` (the six agents + campaign
@@ -415,10 +415,10 @@ deterministic — fake model/target clients except the sibling-checkout
 citation-verification class noted in §4.2, no live network or GPU call in
 any case (§4.2).
 
-### 5.2 The three owner-approved critical vuln reports
+### 5.2 The three owner-approved critical vuln reports, plus VULN-0004
 
-All three are reproducible from `evals/recordings/` and filed as structured,
-schema-valid JSON under `docs/vuln_reports/`:
+All three criticals are reproducible from `evals/recordings/` and filed as
+structured, schema-valid JSON under `docs/vuln_reports/`:
 
 | Report | Exploit ID | Label | Recording (sample size) |
 |---|---|---|---|
@@ -428,15 +428,40 @@ schema-valid JSON under `docs/vuln_reports/`:
 
 All three carry `"approved_by": "owner"`, `"approved_at":
 "2026-07-22T06:01:56Z"`, `"requires_human_gate": true` — verified by
-reading each file directly (§2.1 above quotes the exact fields). A fourth
-recorded set exists for a non-critical, DoS-adjacent probe
-(`evals/recordings/dos-overlong-query-max-query-chars/`, 1 draw) — this is
-the bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-013
-(false positive, resolved narrowly by white-box trace, issue #25; TRI-010
+reading each file directly (§2.1 above quotes the exact fields).
+
+**VULN-0004 (Medium, the fourth owner-approved finding — not one of the
+three criticals above).** `docs/vuln_reports/VULN-0004.json`: `exploit_id:
+EXP-0004`, severity `medium`, `observed: "detect() returned
+vulnerable=True, label='accepted_no_bound_observed' ..."`,
+filed from issue #54's white-box trace of the conversation store's
+unbounded growth (`docs/ISSUE_54_UNBOUNDED_INPUT_TRACE.md`,
+`docs/TRIAGE_LAB.md` TRI-014, referenced from this packet's own framing
+above at the top of this document). Its own, dedicated live evidence is
+`evals/recordings/dos-unbounded-chat-message-length/` — **1 draw**
+(`draw1` only; stated honestly as a single draw, not the 3-draw sample
+size the three criticals above carry). It carries `"approved_by":
+"owner"`, `"approved_at": "2026-07-25T23:54:59Z"`,
+`"requires_human_gate": true` — the gate fired here because
+`denial_of_service` is force-routed through human approval regardless of
+severity (`redteam/agents/documentation.py`'s `FORCE_HUMAN_GATE_CATEGORIES`),
+not because the finding is critical severity.
+
+**Do not conflate VULN-0004's recording with the dismissed DoS probe
+below.** A separate, unrelated recorded set exists for a *different*,
+non-critical, DoS-adjacent probe that was dismissed as a false positive:
+`evals/recordings/dos-overlong-query-max-query-chars/` — **1 draw** — the
+bounded-input-guard probe underlying `docs/TRIAGE_LAB.md` TRI-013 (false
+positive, resolved narrowly by white-box trace, issue #25; TRI-010
 dismissed these same query-size guards on inspection alone, without a
 trace — TRI-013 is the traced probe of that same `MAX_QUERY_CHARS`
-guard), not a fourth critical, and is not conflated with the three
-above.
+guard). This recording is **not** VULN-0004's evidence and is not counted
+among any owner-approved finding — it never produced a filed
+`docs/vuln_reports/` report.
+
+Together, `evals/recordings/` holds **five** directories total (verified
+by directory listing): the three criticals' recordings above, VULN-0004's
+own recording, and this one dismissed-candidate recording.
 
 **Re-verifying without corrupting the approval record (issue #64).**
 `tools/build_vuln_reports.py` is the script that produced VULN-0001–0003
@@ -493,8 +518,8 @@ to approve and nothing already filed.
   suspected halts new directives; an empty-completion error is skipped, not
   fatal (this is §6's postmortem subject); `max_iterations` input
   validation. Test count: 163 baseline → 171 (PR #35's own reported delta;
-  the repo has since grown to 250 total with the sibling checkout present,
-  or 234 passed / 106 skipped without it, §5.1).
+  the repo has since grown to 346 total with the sibling checkout present,
+  or 240 passed / 106 skipped without it, §5.1).
 
 ### 5.4 Load-test numbers
 
@@ -614,13 +639,13 @@ describes — not because it was dramatic.
   (Mermaid diagram, trust-zone framing), §2 Auth model (platform + target),
   §3 Versioned dependency list (`requirements-contracts.txt`, contracts
   versioning, model runtimes), §4 Self-scan results (commands run + process
-  evidence), §5 Eval-result evidence (340 tests with the sibling checkout
-  present / 234 passed, 106 skipped in CI, 3 criticals, live-campaign
+  evidence), §5 Eval-result evidence (346 tests with the sibling checkout
+  present / 240 passed, 106 skipped in CI, 3 criticals, live-campaign
   evidence, load-test numbers), §6 Sample incident and postmortem.
 - **Every section cites a real, already-committed artifact**, not an
   invented one: `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`,
   `docs/STAGE1_TARGET.md`, `docs/LOAD_TEST.md`, `docs/TRIAGE_LAB.md`,
-  `docs/vuln_reports/VULN-000{1,2,3}.json`, `contracts/README.md`,
+  `docs/vuln_reports/VULN-000{1,2,3,4}.json`, `contracts/README.md`,
   `contracts/v1/*.schema.json`, `requirements-contracts.txt`,
   `redteam/agents/red_team.py`, `redteam/campaign.py`, `.gitignore`,
   `evals/recordings/*`, and PR #35 / PR #40 (`gh pr view`, quoted verbatim).
