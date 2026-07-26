@@ -435,7 +435,7 @@ even one is present it refuses the **entire** run (exit non-zero, names
 every blocking file, writes nothing) rather than regenerating over
 approved evidence. Because all three findings here are `critical`
 severity, `DocumentationAgent.file_report` always holds them
-`pending_human_approval` — the human-approval step (`approve_at`/
+`pending_human_approval` — the human-approval step (`approved_at`/
 `approved_by`) that produced the committed `VULN-000{1,2,3}.json` was a
 separate, explicit approval action, not something `build_vuln_reports.py`
 does on its own — so the script can never re-derive and overwrite an
@@ -446,9 +446,22 @@ approved evidence instead. Against a scratch directory (not
 content: unchanged recordings reproduce byte-identical report bodies
 (ignoring `filed_at`, which legitimately differs run to run) rather than
 being silently re-stamped every time — making a rerun a genuine
-reproduction check, not just a generator. See
+reproduction check, not just a generator. A reader can point the script
+at a scratch directory directly, with no editing required:
+
+```
+python tools/build_vuln_reports.py --out-dir /path/to/scratch-dir
+```
+
+The refuse-on-approved-collision guard (above) still applies to whatever
+directory `--out-dir` targets — it changes only *where* the script
+looks/writes, never whether it is willing to clobber an owner-approved
+report there; the default (no `--out-dir`) is unchanged and still targets
+`docs/vuln_reports/`. See
 `tests/tools/test_build_vuln_reports_nondestructive.py` for the enforced
-guarantee. `tools/build_vuln_report_p3_54.py` (VULN-0004) and
+guarantee, including
+`test_cli_out_dir_lets_a_reader_regenerate_into_a_scratch_directory`,
+which invokes this exact command as a subprocess. `tools/build_vuln_report_p3_54.py` (VULN-0004) and
 `tools/approve_vuln_0004.py` share the same non-destructive discipline by
 construction: the former refuses outright if any `VULN-0004*.json`
 already exists, and the latter refuses unless there is a pending artifact
