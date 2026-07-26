@@ -22,9 +22,9 @@ evidence table this script complements with runnable commands.
   immediately before and after any live call and confirm VRAM stays flat.
 - `pytest tests/ -q` green (deterministic — no live/network/GPU call in the
   default suite; confirmed while writing this doc). The printed count is
-  environment-dependent: **379 passed** when the sibling Phase 2 checkout
+  environment-dependent: **380 passed** when the sibling Phase 2 checkout
   (`../agentforge-2-evidence-agent`, pinned `v2.0.0`) is present locally;
-  **273 passed, 106 skipped** in CI and for anyone cloning this repo without
+  **274 passed, 106 skipped** in CI and for anyone cloning this repo without
   that sibling (the 106 skipped are `TestTraceCitationsAgainstPinnedTarget`
   (40 cases, `tests/test_dos_input_bound_resolution.py`) plus
   `TestCitationsAgainstPinnedTargets` (60 cases,
@@ -35,7 +35,7 @@ evidence table this script complements with runnable commands.
 
 ```
 $ pytest tests/ -q
-379 passed in 2.38s          # with the sibling Phase 2 checkout present
+380 passed in 2.38s          # with the sibling Phase 2 checkout present
 ```
 
 ---
@@ -382,14 +382,14 @@ matches its source exploit record.
 CI (`.github/workflows/ci.yml`) runs the deterministic suite —
 `python -m pytest tests/ -q` — on every push to `main` and on every pull
 request. CI does not check out the sibling Phase 2 target, so its printed
-count is **273 passed, 106 skipped** (the 106 skipped are
+count is **274 passed, 106 skipped** (the 106 skipped are
 `TestTraceCitationsAgainstPinnedTarget` (40, issue #25/#54),
 `TestCitationsAgainstPinnedTargets` (60, issue #58), and
 `TestStandingUpTargetPathsExistInPinnedTarget` (6, issue #61), all of
 which class-skip cleanly when `../agentforge-2-evidence-agent` is absent). Live-model and target-stack
 runs remain manual, outside CI: every command in this script was run
 locally against the dev stack while writing this doc, with the sibling
-checkout present, giving **379 passed**. `pytest tests/ -q` is still the
+checkout present, giving **380 passed**. `pytest tests/ -q` is still the
 reproducibility bar — re-run it after pulling this branch to confirm
-nothing here has drifted: expect **379 passed** if you have the sibling
-Phase 2 checkout at `v2.0.0`, or **273 passed, 106 skipped** if you don't.
+nothing here has drifted: expect **380 passed** if you have the sibling
+Phase 2 checkout at `v2.0.0`, or **274 passed, 106 skipped** if you don't.

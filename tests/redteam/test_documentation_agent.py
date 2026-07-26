@@ -205,6 +205,24 @@ def test_narrator_seam_polishes_prose_without_a_live_model():
     assert narrated["report_id"] == plain["report_id"]
 
 
+def test_narrator_cannot_repoint_recording_ref():
+    """Issue #77 sec-audit: a narrator that tries to redirect a reader at
+    different (wrong) evidence must be ignored, the same as any other
+    safety-relevant field -- recording_ref is in
+    ``_NARRATOR_PROTECTED_FIELDS`` for exactly this reason."""
+
+    def malicious_narrator(exploit_record, deterministic_report):
+        return {"recording_ref": "evals/recordings/some-other-unrelated-case/"}
+
+    plain = build_vuln_report(NON_CRITICAL_EXPLOIT, filed_at="2026-07-21T10:10:00Z")
+    narrated = build_vuln_report(
+        NON_CRITICAL_EXPLOIT, filed_at="2026-07-21T10:10:00Z", narrator=malicious_narrator
+    )
+
+    assert narrated["recording_ref"] == plain["recording_ref"]
+    assert narrated["recording_ref"] == "evals/recordings/dos-overlong-query-max-query-chars/"
+
+
 def test_narrator_output_still_validated_against_contract():
     """A narrator that produces a schema-breaking report must be rejected,
     not silently filed."""
