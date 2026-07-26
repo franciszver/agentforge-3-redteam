@@ -23,7 +23,7 @@
 - **Machine-checked citations:** every `file:line` citation below is
   verified against the pinned tag it names —
   `evals/analysis/v210_upstream_status.py`'s `TRACE_CITATIONS_V210`
-  (58 entries, tagged `v2.0.0` or `v2.1.0` per-citation, extending
+  (60 entries, tagged `v2.0.0` or `v2.1.0` per-citation, extending
   `evals/analysis/dos_input_bound_resolution.py`'s `TRACE_CITATIONS`
   pattern), checked line-for-line by
   `tests/test_v210_upstream_status.py::TestCitationsAgainstPinnedTargets`

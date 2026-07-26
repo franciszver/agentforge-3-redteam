@@ -376,6 +376,18 @@ TRACE_CITATIONS_V210: tuple[tuple[str, str, int, str], ...] = (
         1478,
         "await _validate_token(validator, token)",
     ),
+    (
+        "v2.0.0",
+        "services/copilot-agent/app/chat.py",
+        1438,
+        "token = extract_bearer_token(authorization)",
+    ),
+    (
+        "v2.0.0",
+        "services/copilot-agent/app/chat.py",
+        1439,
+        "await _validate_token(validator, token)",
+    ),
 )
 
 # -- Faithful reproduction of app.answer_grounding's tokenizer/overlap rule
