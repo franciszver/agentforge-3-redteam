@@ -126,8 +126,10 @@ replayable draw(s) backing the finding. ``build_vuln_report`` computes it
 deterministically from the source exploit record's own required
 ``recording_ref`` field (see ``_recording_ref_for``): the record's
 ``recording_ref`` -- set by ``campaign.py`` from the actual path
-``record_run`` wrote the recording to -- is relativised to the repo root and
-its filename stripped, leaving the containing directory. This is
+``record_run`` wrote the recording to -- has its filename stripped, leaving
+the immediate containing directory's name (not repo-root-relativised: real
+callers legitimately point ``record_run``'s ``recordings_dir`` outside the
+repo, e.g. ``tools/load_test_replay.py``'s scratch tempdir). This is
 deliberately NOT re-derived from ``case_id``: a live campaign's
 ``category_random``/``mutation_of`` attempts record under a fabricated id
 (``attempt["case_id"]``) that can diverge from the exploit record's own
@@ -331,33 +333,37 @@ def _recording_ref_for(exploit_record: Mapping[str, Any]) -> str:
     from ``case_id`` therefore silently points a live-campaign report at the
     WRONG recording directory. The record's own ``recording_ref`` (set from
     ``str(recording_path)``, campaign.py:390-409) is always correct, so this
-    locates the ``recordings`` path segment (production runs under the real
-    ``evals/recordings/``; tests may point ``recordings_dir`` at a ``tmp_path``
-    whose absolute prefix is not under the repo root at all, so we cannot
-    require literal repo-root containment) and takes the directory
-    immediately under it -- a structural cross-check that the record's own
-    ``recording_ref`` really does lie under a ``recordings/<dir>/<file>``
-    layout, not merely a string transplant of ``case_id``. Raises loudly
-    (never silently) if that structure is absent or the directory name would
-    not itself be schema-valid.
+    takes the file's own immediate parent directory name instead.
+
+    Deliberately NOT anchored on a literal ``evals/recordings/`` prefix or a
+    ``recordings`` path segment, and NOT relativised against the repo root:
+    ``evals.runner.record_run`` always writes
+    ``<recordings_dir>/<id>/<timestamp>-draw<N>.json`` (evals/runner.py:187-
+    190), so the file's parent directory name IS the meaningful identifier
+    regardless of what ``<recordings_dir>`` itself is named or where it
+    lives -- and real callers legitimately vary it: production uses the real
+    ``evals/recordings/`` (repo-root-relative), tests point it at a
+    ``tmp_path`` (outside the repo entirely), and
+    ``tools/load_test_replay.py`` deliberately points it at a scratch
+    tempdir named e.g. ``agentforge3-load-test-recordings-<hex>`` (not
+    literally ``recordings``, and outside the repo root) to avoid flooding
+    the committed tree. An earlier version of this function required a
+    literal ``recordings`` path segment as a "structural cross-check" --
+    that requirement rejected every confirmed exploit
+    ``tools/load_test_replay.py`` produces (its scratch dir's basename does
+    not equal ``recordings``), reproduced as 0/3 ``filed_reports`` with all
+    3 signalled ``vuln_report_filing_failed`` before this was caught in
+    review and reverted to the simpler, universally-correct invariant below.
     """
     raw_ref = _require(exploit_record, "recording_ref")
     normalized = str(raw_ref).replace("\\", "/")
     parts = [p for p in normalized.split("/") if p not in ("", ".")]
-    try:
-        recordings_idx = len(parts) - 1 - parts[::-1].index("recordings")
-    except ValueError:
+    if len(parts) < 2:
         raise DocumentationAgentError(
-            f"exploit_record recording_ref {raw_ref!r} has no 'recordings' "
-            "directory segment -- cannot derive a report recording_ref from it"
-        ) from None
-    # Need at least "<dir>/<file>" after the "recordings" segment.
-    if recordings_idx + 2 >= len(parts):
-        raise DocumentationAgentError(
-            f"exploit_record recording_ref {raw_ref!r} does not contain a "
-            "<dir>/<file> beneath its 'recordings' segment"
+            f"exploit_record recording_ref {raw_ref!r} has no parent "
+            "directory -- cannot derive a report recording_ref from it"
         )
-    dir_name = parts[recordings_idx + 1]
+    dir_name = parts[-2]
     if not _RECORDING_DIR_NAME_RE.match(dir_name):
         raise DocumentationAgentError(
             f"exploit_record recording_ref {raw_ref!r} has recording "

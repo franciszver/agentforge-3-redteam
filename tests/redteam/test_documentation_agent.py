@@ -513,14 +513,37 @@ def test_recording_ref_derivation_rejects_an_underscored_recording_directory():
         build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
 
 
-def test_recording_ref_derivation_rejects_a_ref_outside_evals_recordings():
-    """A record whose own ``recording_ref`` does not resolve under
-    ``evals/recordings/`` must fail loudly, not silently produce a
-    schema-shaped-but-wrong path."""
+def test_recording_ref_derivation_rejects_a_ref_with_no_parent_directory():
+    """A record whose own recording_ref is a bare filename (no directory at
+    all) must fail loudly -- there is nothing to derive a directory from."""
     record = dict(NON_CRITICAL_EXPLOIT)
-    record["recording_ref"] = "tmp/somewhere-else/draw1.json"
+    record["recording_ref"] = "draw1.json"
     with pytest.raises(DocumentationAgentError):
         build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+
+
+def test_recording_ref_derives_correctly_when_recordings_dir_is_a_scratch_tempdir():
+    """Deep-review regression test: tools/load_test_replay.py deliberately
+    points campaign.py's recordings_dir at a scratch tempdir named e.g.
+    'agentforge3-load-test-recordings-<hex>' (not literally 'recordings',
+    and not under the repo root) so it never floods the committed
+    evals/recordings/ tree. An earlier version of _recording_ref_for
+    required a literal 'recordings' path segment, which rejected every
+    confirmed exploit this real tool produces -- reproduced as 0/3
+    filed_reports, all 3 signalled vuln_report_filing_failed, before this
+    was caught in review. The fix (take the file's own immediate parent
+    directory name, with no assumption about the grandparent's name or
+    location) must handle this real caller."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["recording_ref"] = (
+        r"C:\Users\someone\AppData\Local\Temp\agentforge3-load-test-recordings-ab12cd34"
+        r"\redteam-gen-data-exfiltration-89b57a32-02e6-4cee-89fc-9ab29ddc795e"
+        r"\20260726T055549Z-draw1.json"
+    )
+    report = build_vuln_report(record, filed_at="2026-07-21T10:10:00Z")
+    assert report["recording_ref"] == (
+        "evals/recordings/redteam-gen-data-exfiltration-89b57a32-02e6-4cee-89fc-9ab29ddc795e/"
+    )
 
 
 def test_all_categories_map_to_a_valid_severity_and_pass_schema():
