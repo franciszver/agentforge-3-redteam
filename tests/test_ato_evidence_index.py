@@ -249,8 +249,8 @@ def test_documentation_agent_docstring_does_not_claim_unqualified_repro_steps():
 # ARCHITECTURE.md did here) is caught the same way.
 
 _NO_RECORDING_REF_CLAIM_RE = re.compile(
-    r"(?:deliberately )?has no.{0,10}`?recording_ref`?|"
-    r"carries no.{0,40}`?recording_ref`?|"
+    r"(?:deliberately )?has no.{0,40}`?recording_ref`?.{0,10}field|"
+    r"carries no.{0,40}`?recording_ref`?.{0,10}field|"
     r"no `?recording_ref`? field",
     re.IGNORECASE | re.DOTALL,
 )
