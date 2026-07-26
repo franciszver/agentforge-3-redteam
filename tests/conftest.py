@@ -4,6 +4,12 @@
 each independently defined an identical ``_tracked_markdown_files()`` helper
 (every ``*.md`` file `git` tracks). Consolidated here so both import one
 implementation instead of two copies drifting apart.
+
+``tests/test_dos_input_bound_resolution.py`` and
+``tests/test_claude_md_accuracy.py`` each independently defined an identical
+sibling-target-checkout helper (path to ``../agentforge-2-evidence-agent``,
+pinned tag, and an availability check for the ``skipif`` guard). Consolidated
+here for the same reason.
 """
 
 from __future__ import annotations
@@ -12,6 +18,9 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+TARGET_REPO = REPO_ROOT.parent / "agentforge-2-evidence-agent"
+TARGET_TAG = "v2.0.0"
 
 
 def tracked_markdown_files() -> list[Path]:
@@ -26,3 +35,9 @@ def tracked_markdown_files() -> list[Path]:
         check=True,
     ).stdout
     return [REPO_ROOT / line.strip() for line in out.splitlines() if line.strip()]
+
+
+def target_repo_available() -> bool:
+    """Whether the read-only sibling target checkout is present -- true on
+    an operator's provisioned desktop, false in CI (no target checkout)."""
+    return (TARGET_REPO / ".git").exists()

@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import TARGET_REPO, TARGET_TAG, target_repo_available
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 _CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
@@ -43,16 +45,9 @@ _STANDING_UP_SECTION_RE = re.compile(
 # "scripts/ingest_demo_pdf.py" or the bare "docker-compose.copilot.yml".
 _TARGET_PATH_RE = re.compile(r"[\w./\-]+\.(?:sh|py|yml|yaml)")
 
-_TARGET_REPO = REPO_ROOT.parent / "agentforge-2-evidence-agent"
-_TARGET_TAG = "v2.0.0"
-
 # The "Standing up the target" section's docker-compose commands `cd` into
 # this directory before referencing the bare compose filenames.
 _COMPOSE_DIR = "docker/development-easy"
-
-
-def _target_repo_available() -> bool:
-    return (_TARGET_REPO / ".git").exists()
 
 
 def _target_paths_in_standing_up_section() -> list[str]:
@@ -133,7 +128,7 @@ def test_standing_up_section_extracts_the_known_target_paths():
 
 
 @pytest.mark.skipif(
-    not _target_repo_available(),
+    not target_repo_available(),
     reason="sibling target checkout ../agentforge-2-evidence-agent not present (expected in CI)",
 )
 class TestStandingUpTargetPathsExistInPinnedTarget:
@@ -144,17 +139,17 @@ class TestStandingUpTargetPathsExistInPinnedTarget:
     sibling checkout, never `git checkout`."""
 
     @pytest.mark.parametrize(
-        "path", _target_paths_in_standing_up_section() if _target_repo_available() else []
+        "path", _target_paths_in_standing_up_section() if target_repo_available() else []
     )
     def test_path_exists_at_pinned_target_tag(self, path):
         result = subprocess.run(
-            ["git", "cat-file", "-e", f"{_TARGET_TAG}:{path}"],
-            cwd=_TARGET_REPO,
+            ["git", "cat-file", "-e", f"{TARGET_TAG}:{path}"],
+            cwd=TARGET_REPO,
             capture_output=True,
             text=True,
         )
         assert result.returncode == 0, (
             f"CLAUDE.md's 'Standing up the target' section references "
             f"{path!r}, which does not exist in the pinned target "
-            f"({_TARGET_TAG}) sibling checkout -- {result.stderr.strip()}"
+            f"({TARGET_TAG}) sibling checkout -- {result.stderr.strip()}"
         )
