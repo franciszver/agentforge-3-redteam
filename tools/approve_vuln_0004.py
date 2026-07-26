@@ -22,15 +22,23 @@ either -- it refuses to overwrite an existing ``VULN-0004*.json``, and
 even if it didn't, ``build_vuln_report``'s ``filed_at`` defaults to
 "now", which would silently mutate an already-committed timestamp.
 
-The correct move -- not a hand edit -- is to re-derive the exact same
-exploit_record ``tools/build_vuln_report_p3_54.py`` built (same
-``exploit_id``, ``category``, and ``minimal_repro`` observed/expected
-text, reused directly from that module rather than retyped here) and
-re-drive ``file_report()`` on a fresh ``DocumentationAgent``, pinning
-``filed_at`` to the value already committed in the pending artifact so
-the pre-approval report this reconstructs is byte-identical (module the
-new approval fields) to what is on disk. That repopulates ``_pending``
-with the same report the original run produced, and THEN this script
+The correct move -- not a hand edit -- is to re-derive the exploit_record
+via the SAME function ``tools/build_vuln_report_p3_54.py`` used
+(``_build_exploit_record()``, reused directly, not retyped here, so
+``exploit_id``, ``category``, and ``minimal_repro`` observed/expected text
+can't drift), and re-drive ``file_report()`` on a fresh
+``DocumentationAgent``, pinning ``filed_at`` to the value already
+committed in the pending artifact. What that reconstructs is compared to
+what is on disk FIELD-FOR-FIELD on parsed JSON -- not byte-for-byte: key
+order, indentation, and trailing-newline differences are normalised away
+by ``json.loads`` on both sides. It is still a strong guard (any
+field-VALUE drift fails it), and note ``_build_exploit_record()`` calls
+``now_iso()`` for ``confirmed_at`` on every run (see
+``tools/build_vuln_report_p3_54.py:88-89``), so the reconstructed
+exploit_record genuinely differs from the original there -- that field
+never enters the vuln_report body being compared, so it doesn't matter.
+Only if the comparison passes does this repopulate ``_pending`` with a
+report matching the one the original run produced, and THEN this script
 calls ``approve()`` -- the real approval transition -- on that pending
 entry. Every field in the final artifact (schema_version, report_id,
 exploit_id, severity, clinical_impact, observed, expected, remediation,
@@ -66,6 +74,55 @@ _FILED_PATH = _REPORTS_DIR / "VULN-0004.json"
 _EXPLOIT_ID = "EXP-0004"
 
 
+def _file_pending(
+    documentation: DocumentationAgent,
+    record: dict,
+    *,
+    filed_at: str,
+    force_human_gate: bool,
+) -> dict:
+    """File ``record`` and return the pending report -- or refuse via
+    ``SystemExit`` WITHOUT ever calling ``DocumentationAgent.file_report``
+    at all if the human-approval gate is not going to be forced.
+
+    Cold-review fix (PR #67): the previous version called ``file_report``
+    first and only checked the result afterwards with a bare ``assert``.
+    ``file_report`` persists immediately for any report that does NOT
+    require the human gate (see ``DocumentationAgent.file_report``'s
+    non-gated branch, which calls ``self._persist`` before returning) --
+    so a post-hoc check runs too late: an unapproved ``VULN-0004.json``
+    could already be on disk by the time it fires, and would then
+    permanently block re-runs via ``_FILED_PATH.exists()``. A bare
+    ``assert`` is also silently stripped under ``python -O``. Checking
+    ``force_human_gate`` BEFORE calling ``file_report`` at all -- and
+    raising ``SystemExit`` rather than asserting -- makes a half-written
+    unapproved artifact impossible: this category's severity
+    (``denial_of_service`` -> "medium") never gates on its own, so
+    ``force_human_gate`` being true is the ONLY thing that keeps
+    ``file_report`` in its pending (non-persisting) branch.
+    """
+    if not force_human_gate:
+        raise SystemExit(
+            f"refusing to file {record.get('exploit_id')!r}: force_human_gate "
+            "is False, which would let file_report() auto-file (and persist) "
+            "an unapproved report instead of holding it pending human "
+            "approval -- stopping before file_report() is called at all"
+        )
+
+    pre_approval = documentation.file_report(
+        record,
+        filed_at=filed_at,
+        force_human_gate=force_human_gate,
+    )
+    if pre_approval["status"] != "pending_human_approval":
+        raise SystemExit(
+            f"file_report did not hold {record.get('exploit_id')!r} pending "
+            f"human approval (status={pre_approval['status']!r}) -- refusing "
+            "to approve"
+        )
+    return pre_approval
+
+
 def main() -> int:
     if _FILED_PATH.exists():
         print(f"already approved: {_FILED_PATH}", file=sys.stderr)
@@ -83,18 +140,32 @@ def main() -> int:
     assert record["exploit_id"] == _EXPLOIT_ID
 
     documentation = DocumentationAgent(reports_dir=_REPORTS_DIR)
-    pre_approval = documentation.file_report(
+    pre_approval = _file_pending(
+        documentation,
         record,
         filed_at=original_filed_at,
         force_human_gate=True,  # denial_of_service is already unconditionally
         # forced (FORCE_HUMAN_GATE_CATEGORIES); explicit here for clarity.
     )
-    assert pre_approval["status"] == "pending_human_approval"
 
-    # Sanity: the report this run reconstructed must match what is already
-    # committed on disk, field for field -- if it doesn't, something about
-    # the reconstruction has drifted from the original filing and this
-    # script must stop rather than silently approve a DIFFERENT report body.
+    # Compare parsed JSON field-for-field against what is already committed
+    # on disk -- NOT a byte-for-byte comparison (key order, indentation, and
+    # trailing-newline differences are normalised away by json.loads on both
+    # sides). Still a strong guard: it fires on any FIELD-VALUE drift. Note
+    # what never enters this comparison at all, because it never enters the
+    # vuln_report in the first place (see documentation.py's "Why the
+    # vuln_report contract has no minimal_repro/recording_ref" section):
+    # the exploit record's case_id, attempt_id, verdict_id, source,
+    # recording_ref, and minimal_repro.steps, plus confirmed_at (which
+    # _build_exploit_record() sets to now_iso() every run, per
+    # tools/build_vuln_report_p3_54.py:88-89, so it genuinely differs run to
+    # run). None of that is a gap: the owner-reviewed BYTES are the report
+    # body being compared here, and every field the report body actually
+    # contains (schema_version, report_id, exploit_id, severity,
+    # clinical_impact, observed, expected, remediation,
+    # fix_validation_status, requires_human_gate, filed_at) is checked.
+    # (``_file_pending`` above already guarantees ``pre_approval["status"] ==
+    # "pending_human_approval"`` -- it raises SystemExit otherwise.)
     reconstructed_body = {k: v for k, v in pre_approval.items() if k != "status"}
     if reconstructed_body != pending_on_disk:
         print(
