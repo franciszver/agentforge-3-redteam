@@ -362,14 +362,42 @@ class DocumentationAgent:
             self._reports_dir.mkdir(parents=True, exist_ok=True)
         self._filed: dict[str, dict[str, Any]] = {}
         self._pending: dict[str, dict[str, Any]] = {}
+        # Cold-review fix (this PR, FIX 4): the source path each PENDING
+        # report was actually loaded from (or persisted to, by this
+        # instance's own file_report()) -- see _remove_pending_file, which
+        # must unlink THIS path, not one reconstructed from report_id (a
+        # pending file's name is no longer trusted to equal
+        # "<report_id><PENDING_SUFFIX>" without having been checked at load
+        # time -- see below).
+        self._pending_paths: dict[str, Path] = {}
         self._load_persisted()
 
     def _load_persisted(self) -> None:
         """Load every already-persisted report in ``reports_dir`` back into
         ``_filed``/``_pending`` (issue #63) -- see the module docstring's
-        "Loading" section for the full contract."""
+        "Loading" section for the full contract.
+
+        Cold-review fix (this PR, FIX 4): a report's ``report_id`` was
+        previously taken purely from FILE CONTENT, with the filename never
+        checked and ``report_id`` uniqueness never enforced across loaded
+        reports. Reproduced: a file named ``weird-name.pending-human-
+        approval.json`` whose CONTENT claims ``report_id: VULN-0001,
+        exploit_id: EXP-0002`` caused ``--approve EXP-0002`` to overwrite the
+        already-filed, already-approved ``VULN-0001.json`` -- and the stale
+        source file (``weird-name...``) was never removed, since
+        ``_remove_pending_file`` unlinked a path constructed from
+        ``report_id``, not the file's actual source path. Both are fixed
+        here: a persisted file whose name does not match
+        ``<its own report_id><suffix>`` is rejected (fail loudly, same as
+        every other load-time defect this method already refuses), a
+        ``report_id`` claimed by two different ``exploit_id``s is rejected,
+        and each pending report's real source path is tracked in
+        ``_pending_paths`` so approval unlinks the file that was actually
+        read, not a filename guess.
+        """
         if self._reports_dir is None:
             return
+        seen_report_ids: dict[str, str] = {}  # report_id -> the exploit_id that claimed it
         for path in sorted(self._reports_dir.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -381,8 +409,25 @@ class DocumentationAgent:
                 raise DocumentationAgentError(f"persisted report {path} is not a JSON object")
             self._validate(data)
             exploit_id = data["exploit_id"]
-            if path.name.endswith(PENDING_SUFFIX):
+            report_id = data["report_id"]
+            is_pending = path.name.endswith(PENDING_SUFFIX)
+            expected_name = f"{report_id}{PENDING_SUFFIX}" if is_pending else f"{report_id}.json"
+            if path.name != expected_name:
+                raise DocumentationAgentError(
+                    f"persisted report {path} is named {path.name!r} but its own content "
+                    f"claims report_id={report_id!r} (expected filename {expected_name!r}) -- "
+                    "refusing to trust a report whose filename and content disagree"
+                )
+            claimant = seen_report_ids.get(report_id)
+            if claimant is not None and claimant != exploit_id:
+                raise DocumentationAgentError(
+                    f"report_id {report_id!r} is claimed by both exploit_id {claimant!r} and "
+                    f"{exploit_id!r} under {self._reports_dir} -- report_id must be unique"
+                )
+            seen_report_ids[report_id] = exploit_id
+            if is_pending:
                 self._pending[exploit_id] = dict(data)
+                self._pending_paths[exploit_id] = path
             else:
                 self._filed[exploit_id] = dict(data)
         # A filed report supersedes a stale pending leftover for the same
@@ -392,6 +437,7 @@ class DocumentationAgent:
         for exploit_id in list(self._pending):
             if exploit_id in self._filed:
                 del self._pending[exploit_id]
+                self._pending_paths.pop(exploit_id, None)
 
     def _validate(self, report: Mapping[str, Any]) -> None:
         errors = sorted(self._validator.iter_errors(report), key=lambda e: list(e.path))
@@ -418,11 +464,25 @@ class DocumentationAgent:
         path = self._reports_dir / f"{report['report_id']}{suffix}"
         path.write_text(json.dumps(dict(report), indent=2), encoding="utf-8")
 
-    def _remove_pending_file(self, report_id: str) -> None:
+    def _remove_pending_file(self, report_id: str, exploit_id: str) -> None:
+        """Unlink the PENDING report's actual source path (cold-review fix,
+        this PR, FIX 4): tracked in ``_pending_paths`` at load/file time, not
+        reconstructed from ``report_id`` -- a pending file loaded from disk
+        is not guaranteed to be named ``<report_id><PENDING_SUFFIX>`` until
+        ``_load_persisted`` has already checked that (and rejected it if
+        not), but tracking the real path here is what actually deletes it
+        even so, rather than silently no-op'ing on a filename that was never
+        on disk in the first place."""
         if self._reports_dir is None:
             return
-        path = self._reports_dir / f"{report_id}{PENDING_SUFFIX}"
-        path.unlink(missing_ok=True)
+        source_path = self._pending_paths.pop(exploit_id, None)
+        if source_path is None:
+            # No tracked source (shouldn't happen in practice -- every
+            # pending entry is either loaded via _load_persisted or
+            # persisted via file_report, both of which record it -- kept as
+            # a harmless fallback to the canonical path).
+            source_path = self._reports_dir / f"{report_id}{PENDING_SUFFIX}"
+        source_path.unlink(missing_ok=True)
 
     def file_report(
         self,
@@ -455,6 +515,8 @@ class DocumentationAgent:
         if report["requires_human_gate"]:
             self._pending[exploit_id] = report
             self._persist(report, suffix=PENDING_SUFFIX)
+            if self._reports_dir is not None:
+                self._pending_paths[exploit_id] = self._reports_dir / f"{report['report_id']}{PENDING_SUFFIX}"
             return {**report, "status": "pending_human_approval"}
 
         self._filed[exploit_id] = report
@@ -489,7 +551,7 @@ class DocumentationAgent:
         # rather than neither, and _load_persisted's "filed wins" rule
         # self-heals the stale leftover on the next load (issue #63).
         self._persist(report)
-        self._remove_pending_file(report["report_id"])
+        self._remove_pending_file(report["report_id"], exploit_id)
         return {**report, "status": "filed"}
 
     def get_filed(self, exploit_id: str) -> dict[str, Any] | None:

@@ -324,6 +324,109 @@ def test_malformed_exploit_record_raises_documentation_agent_error_not_key_error
         build_vuln_report(incomplete, filed_at="2026-07-21T10:08:00Z")
 
 
+# -- DO-NOT-MERGE cold review of PR #76, FIX 4 -------------------------------
+# "Approval can overwrite already-approved evidence." Reproduced: a
+# weird-name.pending-human-approval.json carrying report_id: VULN-0001,
+# exploit_id: EXP-0002 (filename ignored, contents trusted) caused
+# --approve EXP-0002 to overwrite the filed, approved VULN-0001.json, and
+# the stale source file was never removed (_remove_pending_file unlinked by
+# report_id, not source path).
+
+
+def test_load_rejects_a_pending_file_whose_name_does_not_match_its_own_report_id(tmp_path):
+    """The exact attack the reviewer proved: a hand-placed file named
+    something other than ``<report_id>.pending-human-approval.json`` whose
+    CONTENT claims a report_id belonging to a different, already-filed and
+    already-approved report. Loading it must be a loud refusal, not a
+    silent acceptance that later collides on approve()."""
+    filer = DocumentationAgent(reports_dir=tmp_path)
+    filed = filer.file_report(NON_CRITICAL_EXPLOIT)
+    assert filed["status"] == "filed"
+    del filer
+
+    on_disk_filed = json.loads((tmp_path / "VULN-0002.json").read_text(encoding="utf-8"))
+    assert on_disk_filed["clinical_impact"] != "ATTACKER-CONTROLLED OVERWRITE ATTEMPT"
+
+    weird = {
+        "schema_version": "1.0.0",
+        "report_id": "VULN-0002",  # claims the ALREADY-FILED report's id
+        "exploit_id": "EXP-0001",  # under a DIFFERENT exploit_id
+        "severity": "critical",
+        "clinical_impact": "ATTACKER-CONTROLLED OVERWRITE ATTEMPT",
+        "observed": "n/a",
+        "expected": "n/a",
+        "remediation": "n/a",
+        "fix_validation_status": "not_validated",
+        "requires_human_gate": True,
+        "filed_at": "2026-07-25T00:00:00Z",
+    }
+    (tmp_path / "weird-name.pending-human-approval.json").write_text(
+        json.dumps(weird, indent=2), encoding="utf-8"
+    )
+
+    with pytest.raises(DocumentationAgentError, match="filename and content disagree"):
+        DocumentationAgent(reports_dir=tmp_path)
+
+    # Refusing to load must not have touched anything already on disk.
+    still_on_disk = json.loads((tmp_path / "VULN-0002.json").read_text(encoding="utf-8"))
+    assert still_on_disk == on_disk_filed
+    assert (tmp_path / "weird-name.pending-human-approval.json").exists()
+
+
+def test_load_rejects_duplicate_report_id_across_different_exploit_ids(tmp_path):
+    """Two DIFFERENT files can each individually pass the filename check
+    (each correctly named for its own claimed report_id) while still
+    colliding on report_id across different exploit_ids -- e.g. a filed
+    VULN-0001.json for EXP-0001 alongside a correctly-named
+    VULN-0001.pending-human-approval.json that claims EXP-0002. report_id
+    uniqueness must be enforced independently of the filename check."""
+    filer = DocumentationAgent(reports_dir=tmp_path)
+    filer.file_report(NON_CRITICAL_EXPLOIT)  # exploit_id EXP-0002 -> report_id VULN-0002, auto-filed
+    del filer
+
+    colliding_pending = {
+        "schema_version": "1.0.0",
+        "report_id": "VULN-0002",  # collides with the already-filed report above
+        "exploit_id": "EXP-0001",  # but under a DIFFERENT exploit_id
+        "severity": "critical",
+        "clinical_impact": "collision",
+        "observed": "n/a",
+        "expected": "n/a",
+        "remediation": "n/a",
+        "fix_validation_status": "not_validated",
+        "requires_human_gate": True,
+        "filed_at": "2026-07-25T00:00:00Z",
+    }
+    # Correctly named for ITS OWN claimed report_id -- passes the filename
+    # check on its own.
+    (tmp_path / "VULN-0002.pending-human-approval.json").write_text(
+        json.dumps(colliding_pending, indent=2), encoding="utf-8"
+    )
+
+    with pytest.raises(DocumentationAgentError, match="report_id .* is claimed by both"):
+        DocumentationAgent(reports_dir=tmp_path)
+
+
+def test_approve_removes_the_actual_source_path_not_a_report_id_guess(tmp_path):
+    """Even for a legitimately-loaded pending report, _remove_pending_file
+    must unlink the file that was actually loaded -- tracked by path, not
+    reconstructed from report_id -- so a stale source file is never left
+    behind after approval."""
+    filer = DocumentationAgent(reports_dir=tmp_path)
+    filer.file_report(CRITICAL_EXPLOIT)
+    del filer
+
+    approver = DocumentationAgent(reports_dir=tmp_path)
+    source_path = approver._pending_paths["EXP-0001"]
+    assert source_path == tmp_path / "VULN-0001.pending-human-approval.json"
+    assert source_path.exists()
+
+    approver.approve("EXP-0001", approved_by="owner")
+
+    assert not source_path.exists()
+    assert (tmp_path / "VULN-0001.json").exists()
+
+
 def test_all_categories_map_to_a_valid_severity_and_pass_schema():
     for category in (
         "prompt_injection",
