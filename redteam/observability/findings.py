@@ -63,6 +63,21 @@ def pending_human_triage_count(vuln_reports: Sequence[Mapping[str, Any]] = ()) -
     carry a "status" key at all) and from a campaign run's
     ``all_vuln_reports`` list alike. ``()`` -- no reports known -- yields 0,
     the same honest-default convention ``open_high_sev_count`` uses.
+
+    **Not the same number as ``tools/run_campaign.py --list-pending``'s**
+    ``pending_human_triage_count=N`` **line, despite the identical key
+    name** (cold-review fix, this PR): this function counts only the
+    ``vuln_reports`` sequence the CALLER passes to ``emit_snapshot`` (in
+    the live campaign loop, everything filed/pending so far in THIS run),
+    while ``--list-pending`` scans an entire ``--reports-dir`` on disk,
+    directory-wide, independent of any one run. The two can legitimately
+    differ (e.g. reports left pending by an earlier run, or reports
+    outside this run's own ``vuln_reports`` accumulator). See
+    ``contracts/v1/observability_snapshot.schema.json``'s own
+    ``pending_human_triage_count`` field description and
+    ``docs/ARCHITECTURE.md``'s Observability Layer section for the
+    documented limitation -- this is not merely a Python-docstring-only
+    caveat.
     """
     return sum(
         1

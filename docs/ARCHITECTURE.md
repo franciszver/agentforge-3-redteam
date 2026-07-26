@@ -208,6 +208,18 @@ correctly kept separate.
    signals are read programmatically, not just rendered for a human), in
    addition to being a human-facing dashboard.
 
+   **`pending_human_triage_count` names two different scopes (issue #63).**
+   `observability_snapshot.schema.json`'s `pending_human_triage_count`
+   field (`redteam.observability.findings.pending_human_triage_count`)
+   counts only the `vuln_reports` sequence a caller passes to
+   `emit_snapshot` — in the live campaign loop, everything filed/pending
+   so far in *that one run*. `tools/run_campaign.py --list-pending` prints
+   a line using the identical key name, `pending_human_triage_count=N`,
+   but that N is a directory-wide scan of an entire `--reports-dir` on
+   disk, independent of any one run. The two numbers can legitimately
+   differ — do not assume the snapshot field and the CLI's printed line
+   agree.
+
 ## 4. Fully-local model strategy (decided)
 
 The owner's decision, locked in `planning/PLAN.md` and reaffirmed here as

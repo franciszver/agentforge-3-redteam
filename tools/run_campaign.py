@@ -202,7 +202,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 
 def _cmd_list_pending(args: argparse.Namespace) -> int:
-    documentation = DocumentationAgent(reports_dir=args.reports_dir)
+    try:
+        documentation = DocumentationAgent(reports_dir=args.reports_dir)
+    except DocumentationAgentError as exc:
+        print(f"could not load reports_dir={args.reports_dir}: {exc}", file=sys.stderr)
+        return 1
     pending = documentation.all_pending()
     print(f"pending_human_triage_count={len(pending)} (reports_dir={args.reports_dir})")
     for report in pending:
@@ -229,7 +233,11 @@ def _cmd_approve(args: argparse.Namespace) -> int:
     than a warning that silently approves as-is -- a typo'd path must not
     be the thing that downgrades the one safety flag to a no-op.
     """
-    documentation = DocumentationAgent(reports_dir=args.reports_dir)
+    try:
+        documentation = DocumentationAgent(reports_dir=args.reports_dir)
+    except DocumentationAgentError as exc:
+        print(f"could not load reports_dir={args.reports_dir}: {exc}", file=sys.stderr)
+        return 1
     pending = documentation.get_pending(args.approve)
     if pending is None:
         print(

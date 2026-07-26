@@ -32,7 +32,7 @@
       }
     },
     "open_high_sev_count": { "type": "integer", "minimum": 0 },
-    "pending_human_triage_count": { "type": "integer", "minimum": 0, "description": "Reports awaiting human triage right now (issue #63) -- additive v1 field, not in 'required' so pre-#63 producers/consumers stay valid." },
+    "pending_human_triage_count": { "type": "integer", "minimum": 0, "description": "How many of the vuln_reports passed to emit_snapshot() are still awaiting human triage (issue #63) -- NOT a directory-wide count: `tools/run_campaign.py --list-pending` prints the same key name but scans an entire --reports-dir, which can differ from this field's value (see docs/ARCHITECTURE.md's Observability Layer section). Additive v1 field, not in 'required' -- a pre-#63 PRODUCER that omits it stays schema-valid, but a pre-#63 CONSUMER validating incoming snapshots against an unmodified copy of this schema (additionalProperties: false, unchanged) will reject any snapshot that now includes it." },
     "cost": {
       "type": "object",
       "additionalProperties": false,

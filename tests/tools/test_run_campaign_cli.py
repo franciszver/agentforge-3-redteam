@@ -162,6 +162,44 @@ def test_approve_refuses_when_pending_report_drifts_from_its_source_exploit_reco
     assert not (reports_dir / "VULN-0001.json").exists()
 
 
+# -- DO-NOT-MERGE cold review of PR #76, FIX 5 (partial) --------------------
+
+
+def test_list_pending_on_a_directory_with_unrelated_json_fails_cleanly_not_a_traceback(tmp_path, capsys):
+    """--list-pending on a reports_dir containing an unrelated JSON file
+    previously exited with a raw DocumentationAgentError traceback (an
+    uncaught exception) instead of a clean CLI message + rc 1."""
+    reports_dir = tmp_path / "vuln_reports"
+    reports_dir.mkdir()
+    (reports_dir / "random.json").write_text('{"unrelated": true}', encoding="utf-8")
+
+    rc = run_campaign.main(["--list-pending", "--reports-dir", str(reports_dir)])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "could not load reports_dir" in err
+
+
+def test_approve_on_a_directory_with_unrelated_json_fails_cleanly_not_a_traceback(tmp_path, capsys):
+    reports_dir = tmp_path / "vuln_reports"
+    reports_dir.mkdir()
+    (reports_dir / "random.json").write_text('{"unrelated": true}', encoding="utf-8")
+
+    rc = run_campaign.main(
+        [
+            "--approve",
+            "EXP-0001",
+            "--reports-dir",
+            str(reports_dir),
+            "--approved-by",
+            "owner",
+            "--unverified-i-vouch-without-db-check",
+        ]
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "could not load reports_dir" in err
+
+
 def test_never_auto_approves_no_default_exploit_id(tmp_path):
     """Regression guard: --approve has no default -- there is no flag
     combination that approves anything without an explicit exploit_id, and

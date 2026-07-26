@@ -32,8 +32,16 @@ initial cut.
 
 - Issue #63: `observability_snapshot.schema.json` gained an optional
   `pending_human_triage_count` property (durable count of reports still
-  awaiting human triage). Not added to `required`, so pre-#63 producers and
-  consumers stay valid — additive, stays `v1`.
+  awaiting human triage). Not added to `required`, so a pre-#63 PRODUCER
+  that omits the field stays schema-valid — additive, stays `v1`. **This
+  is one-directional, not a blanket "consumers stay valid" claim**: this
+  schema's `additionalProperties: false` (unchanged) means a pre-#63
+  CONSUMER validating an incoming snapshot against its OWN pinned copy of
+  this schema will reject any snapshot that now carries the new field. A
+  consumer must update its own copy of the schema (or relax
+  `additionalProperties`) before it can accept a post-#63 producer's
+  output — see the field's own `description` in the schema for the
+  cross-reference to `--list-pending`'s differently-scoped same-named key.
 
 ## Schemas (one per edge in ARCHITECTURE.md §2)
 
