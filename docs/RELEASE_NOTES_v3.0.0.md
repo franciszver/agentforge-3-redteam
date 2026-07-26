@@ -6,13 +6,13 @@ The Red Team Agent (which attacks) and the Judge Agent (which grades) are
 **architecturally independent at the module and data level**: `judge.py`
 imports nothing under `redteam.agents`, `redteam.harness`, or
 `redteam.observability`, holds no Red Team state, and scores only from a
-`(case, response, attempt_id)` triple (`redteam/agents/judge.py:96-100,343`)
+`(case, response, attempt_id)` triple (`redteam/agents/judge.py:348-357`)
 — never the Red Team's reasoning, prompt history, or internal module state.
 `docs/ARCHITECTURE.md` sets a further goal, per-role OS-process isolation,
 as the design target; as shipped, `redteam/campaign.py::run_campaign` wires
 all six components (Orchestrator, Red Team, target client, Judge, store,
 Documentation) into one Python process, calling each in turn inside a
-single loop (`redteam/campaign.py:254,295,353,436`) — so today the boundary
+single loop (`redteam/campaign.py:254,295,353,446`) — so today the boundary
 is enforced at the module/data level, not the OS-process level described
 as a goal in `docs/ARCHITECTURE.md`. Closing that gap is tracked separately
 (issue #73). What ships today is checked mechanically, **in both
@@ -37,9 +37,9 @@ agent's internals into the other.
 `planning/KICKOFF_PROMPT.md`'s HARD CONSTRAINT reads (quoted verbatim, a
 requirement written before any code existed, not a claim about shipped
 behavior — the parenthesised mechanism below remains a design goal, not
-yet implemented): *"Attack generation and evaluation must NOT share
-context ('conflict of interest by design'). Build four agents with
-architectural (separate process/context) independence."* Read plainly,
+yet implemented): *Attack generation and evaluation must NOT share
+context ("conflict of interest by design"). Build four agents with
+architectural (separate process/context) independence.* Read plainly,
 that names two things: an **intent** (no shared context between attack
 generation and evaluation) and a **mechanism** (separate processes at the
 OS level). Comparing this release against both,
