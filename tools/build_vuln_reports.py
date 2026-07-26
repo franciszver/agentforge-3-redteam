@@ -134,6 +134,21 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
+def _read_json_dict_or_none(path: Path) -> dict[str, Any] | None:
+    """Best-effort read of a report on disk, shared by both ``_is_approved``
+    (Layer 1) and Layer 2's idempotent-regeneration comparison. Returns
+    ``None`` -- never raises -- for any of: an unreadable file or bad
+    encoding (``OSError``, ``UnicodeDecodeError``, a ``ValueError``
+    subclass), malformed JSON (``json.JSONDecodeError``, also a
+    ``ValueError`` subclass), or syntactically valid JSON that isn't an
+    object (``[]``, ``null``, ``"x"``)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _is_approved(path: Path) -> bool:
     """A report on disk counts as owner-approved evidence -- and therefore
     untouchable by this script -- if it carries EITHER approval stamp.
@@ -142,37 +157,14 @@ def _is_approved(path: Path) -> bool:
     report always has both -- this checks either (OR, not AND) so a
     corrupted or hand-edited report missing just one of the two stamps still
     fails closed as "approved" rather than being treated as safe to
-    overwrite. Any read/parse failure is likewise treated as "approved" --
-    a file this script can't understand must not be silently clobbered
-    either; ``main`` refuses and names it instead. This includes: an
-    unreadable file or bad encoding (``OSError``, ``UnicodeDecodeError`` --
-    the latter is a ``ValueError`` subclass), malformed JSON
-    (``json.JSONDecodeError``, also a ``ValueError`` subclass), and
-    syntactically valid JSON that isn't an object -- ``[]``, ``null``,
-    ``"x"`` -- which has no ``.get`` and would otherwise raise
-    ``AttributeError`` instead of failing closed."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return bool(data.get("approved_by")) or bool(data.get("approved_at"))
-    except (OSError, ValueError, AttributeError):
+    overwrite. Any read/parse failure -- including content ``_read_json_
+    dict_or_none`` can't turn into a dict at all -- is likewise treated as
+    "approved": a file this script can't understand must not be silently
+    clobbered either; ``main`` refuses and names it instead."""
+    data = _read_json_dict_or_none(path)
+    if data is None:
         return True
-
-
-def _read_json_dict_or_none(path: Path) -> dict[str, Any] | None:
-    """Best-effort read of an existing (already known NOT owner-approved --
-    ``main``'s Layer 1 would have refused the whole run otherwise) report
-    for Layer 2's idempotent-regeneration comparison. Any of the failure
-    classes ``_is_approved`` guards against -- unreadable file, bad
-    encoding, malformed JSON, syntactically-valid-JSON-but-not-a-dict --
-    is treated as "no usable existing content" (regenerate), not a crash.
-    Unlike ``_is_approved``, this is NOT a fail-closed/refuse decision --
-    it just means Layer 2 has nothing to compare against and will write
-    fresh content, same as if the file didn't exist at all."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
+    return bool(data.get("approved_by")) or bool(data.get("approved_at"))
 
 
 def _without_filed_at(body: Mapping[str, Any]) -> dict[str, Any]:
