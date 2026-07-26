@@ -471,6 +471,36 @@ def test_recording_ref_derives_from_the_records_own_ref_not_case_id():
     assert record["recording_ref"].startswith(report["recording_ref"])
 
 
+def test_contract_legal_underscored_or_uppercase_case_id_does_not_lose_the_finding():
+    """Cold-review FIX 2 (issue #77 follow-up): exploit_record.schema.json's
+    ``case_id`` is ``{type: string, minLength: 1}`` -- no character
+    restriction -- so an underscored or uppercase ``case_id`` is
+    contract-legal. Before FIX 1, ``build_vuln_report`` derived
+    ``recording_ref`` AS ``f"evals/recordings/{case_id}/"``, so this
+    contract-legal input produced a report that failed
+    ``vuln_report.schema.json``'s ``recording_ref`` pattern (no underscores/
+    uppercase) -- raising ``DocumentationAgentError`` only after the exploit
+    was already confirmed and stored, which ``redteam.campaign.run_campaign``
+    catches and ``continue``s past (campaign.py:445-460), silently losing
+    the filed report (the ExploitDB record survives; nothing under
+    docs/vuln_reports/ ever does).
+
+    FIX 1's redesign (recording_ref derives from the record's OWN
+    recording_ref, never case_id) structurally fixes this: case_id's
+    character set no longer feeds any path derivation at all, so this
+    contract-legal value can never again cause a late schema rejection.
+    This test restores the coverage tests/tools/test_build_vuln_reports_gate.py
+    lost when its fixture was switched from underscored to hyphenated
+    (commit 8a60e91) -- proving the underscored/uppercase case is filed,
+    not dropped."""
+    record = dict(NON_CRITICAL_EXPLOIT)
+    record["case_id"] = "DOS_Overlong_Query_MAX_Query_Chars"  # underscored AND uppercase
+    agent = DocumentationAgent(reports_dir=None)
+    report = agent.file_report(record)
+    assert report["status"] == "filed"
+    assert report["recording_ref"] == "evals/recordings/dos-overlong-query-max-query-chars/"
+
+
 def test_recording_ref_derivation_rejects_an_underscored_recording_directory():
     """A record whose real recording directory name is not schema-valid
     (e.g. underscored) must fail loudly rather than derive an invalid
