@@ -20,14 +20,15 @@ which you will stand up locally AND expose live over Tailscale (its
 scripts/tailscale-serve-copilot.sh gives the real "deployed URL" the brief
 hard-gates at every checkpoint). Cross-link all three AgentForge repo READMEs.
 
-Read completely before anything else (all in this repo):
-1. The brief (source of truth):
+Read completely before anything else:
+1. The brief (source of truth), in this repo:
    ./planning/3_AgentForge_SecurityPlatform_RedTeam.html
-2. The playbook:
-   ./planning/APPROACH.md
+2. The playbook (local only, gitignored, not tracked in this public repo):
+   ./prd/APPROACH.md
 3. The cross-phase plan (decisions, staging, local-model strategy, and the
-   inherited target realities — ACL-off-by-default, single-GPU load ceiling):
-   ./planning/PLAN.md
+   inherited target realities — ACL-off-by-default, single-GPU load ceiling;
+   local only, gitignored, not tracked in this public repo):
+   ./prd/PLAN.md
 
 Then study the target: the Phase 2 co-pilot's architecture (planner loop,
 quarantine injection seam, patient-binding authz, verification/citation layer,

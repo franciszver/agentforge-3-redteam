@@ -1,7 +1,7 @@
 # AgentForge Phase 3 — Adversarial Security & Red-Team Platform
 
 A multi-agent red-team platform whose attack target is the Phase 2 co-pilot
-(`agentforge-2-evidence-agent`, pinned at tag `v2.0.0`). Private repo.
+(`agentforge-2-evidence-agent`, pinned at tag `v2.0.0`). Public repo.
 
 ## Operating model (non-negotiable — same as Phases 1–2)
 
@@ -25,7 +25,7 @@ Target repo cloned locally as a sibling checkout of `agentforge-2-evidence-agent
 
 - **GPU bracketing is load-bearing.** 12 GB can't hold the 8B answer model and the 6 GB vision model at once. One engine at a time: stop `llama-server` before any vision ingest; `ollama stop qwen2.5vl:7b` before restarting `llama-server`. `nvidia-smi` before/after every swap. Host `OllamaPrewarm` task must stay **Disabled** (re-enable after the project). Overlapping loads have wedged the driver → reboot. See `[[desktop-host-ollama-conflict]]`.
 - **Ollama is egress-blocked** — model pulls only via the temporary egress-container pattern.
-- **Pre-public:** `planning/APPROACH.md` + `PLAN.md` carry internal strategy; relocate to gitignored `prd/` before flipping public (same as Phase 2). Not urgent while private.
+- **Public repo:** internal-strategy docs (`APPROACH.md`, `PLAN.md`) live only in the gitignored `prd/` directory locally, same as Phase 2 -- they are not tracked and have no public counterpart. Do not add strategy/meta content to tracked files.
 
 ## Rules of engagement (red-team)
 
@@ -34,5 +34,5 @@ No tuning-to-green · single-draw honesty (state sample size) · record every li
 ## Pointers
 
 - Authoritative kickoff / attack surface: `planning/PHASE3_KICKOFF_PROMPT.md` (every claim cites a committed finding).
-- Staged plan: `planning/PLAN.md`. Approach: `planning/APPROACH.md`.
+- Staged plan and approach (local only, gitignored, not in the public repo): `prd/PLAN.md`, `prd/APPROACH.md`.
 - Decision log (local): `prd/DECISIONS.md` — continue it, do not restart.
